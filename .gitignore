@@ -1,0 +1,53 @@
+# ============================================================
+# Aimu's Web File Manager (AWFM) — .gitignore
+# AWFM must never commit credentials, runtime data or build output.
+# ============================================================
+
+# --- Runtime data: local config, upload/download scratch, session state ---
+data/
+logs/
+.temp/
+dist/
+
+# --- Secrets (never commit a real key, cert or password file) ---
+*.pem
+*.key
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+known_hosts
+known_hosts.old
+!config/config.example.json
+!tests/fixtures/**/known_hosts*
+
+# --- Logs / dumps that must not leak into the repo ---
+*.log
+*.log.*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- OS / editor ---
+Thumbs.db
+Desktop.ini
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- Office lock files ---
+~$*

@@ -1,0 +1,29 @@
+{
+  "$schema": "./config.schema.json",
+  "config_version": 1,
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8760,
+    "open_browser": false,
+    "request_timeout_seconds": 60
+  },
+  "security": {
+    "allow_lan": false,
+    "host_key_policy": "strict",
+    "session_token_ttl_seconds": 43200,
+    "max_upload_bytes": 2147483648,
+    "max_download_bytes": 0,
+    "log_level": "INFO",
+    "redact_secrets": true
+  },
+  "ssh": {
+    "connect_timeout_seconds": 15,
+    "command_timeout_seconds": 60,
+    "keepalive_interval_seconds": 30,
+    "max_sessions": 4,
+    "known_hosts_file": "data/known_hosts",
+    "ssh_executable": "",
+    "sftp_executable": ""
+  },
+  "connections": []
+}

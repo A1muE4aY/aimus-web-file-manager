@@ -1,0 +1,3 @@
+# config/ only ever holds templates. Never commit a real config here.
+*.local.json
+config.json
