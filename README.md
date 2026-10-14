@@ -1,12 +1,17 @@
 # Aimu's Web File Manager (AWFM)
 
-> 本地部署的 SSH Web 文件管理工具 · 离线可用 · 轻依赖 · 开箱即用 · 过程透明
+> 本地部署的 SSH Web 文件管理工具 · 离线可用 · 零第三方依赖 · 开箱即用 · 过程透明
 
-AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**连接 VMware 虚拟机，
-把目标虚拟机的文件系统以浏览器界面呈现出来。服务端**只用 Python 3 标准库**，
-前端是**原生 HTML/CSS/JS**，不联网、不装数据库、不装容器。
+AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**连接 Linux 目标机（虚拟机或服务器），
+把目标机的文件系统以浏览器界面呈现出来。服务端**只用 Python 3 标准库**，前端是**原生 HTML/CSS/JS**，
+不联网、不装数据库、不装容器。
 
-当前版本：`v0.1.0`（阶段 02 最小原型开发中）
+| | |
+|---|---|
+| 当前版本 | `v0.1.0`（规划文档 §6.1 的六个阶段全部完成） |
+| 运行时依赖 | **0 个第三方 Python 包**（系统 OpenSSH 客户端视为环境前提） |
+| 测试状态 | 单元 304 / 集成 18 / 安全 38 / 端到端 3，合计 **363 项全部通过**（见 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)） |
+| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.0-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
 
 ---
 
@@ -14,38 +19,47 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 
 | 分级 | 功能 | 状态 |
 |---|---|---|
-| P0 | SSH 主机/端口/用户名/认证方式配置 | 计划中 |
-| P0 | 连接、断开、重连与连接状态展示 | 计划中 |
-| P0 | 浏览远程目录、进入子目录、返回上级 | 计划中 |
-| P0 | 显示文件名、类型、大小、修改时间 | 计划中 |
-| P0 | 连接错误 / 权限错误 / 目录不存在提示 | 计划中 |
-| P0 | 本地配置保存与读取 | 计划中 |
-| P0 | 基础日志、健康检查、离线运行 | 计划中 |
-| P1 | 文件下载 / 上传、文本预览、排序、进度与取消 | 计划中 |
+| P0 | 配置 SSH 主机/端口/用户名/认证方式（密钥文件、ssh-agent、密码） | 已实现 |
+| P0 | 连接、断开、重连与连接状态展示 | 已实现 |
+| P0 | 浏览远程目录、进入子目录、返回上级、刷新 | 已实现 |
+| P0 | 显示文件名、类型、大小、权限、属主、修改时间 | 已实现 |
+| P0 | 连接错误 / 权限错误 / 目录不存在的可理解提示 | 已实现 |
+| P0 | 本地配置保存与读取（原子写入，损坏时报错而非静默重置） | 已实现 |
+| P0 | 基础日志、健康检查、离线运行 | 已实现 |
+| P1 | 文件与目录下载（流式，不整份读入内存） | 已实现（浏览器原生下载） |
+| P1 | 文件上传（流式、有大小上限、覆盖二次确认、进度、取消） | 已实现 |
+| P1 | 文本文件预览（编码探测 + 大小上限） | 已实现 |
+| P1 | 文件名排序、路径导航与刷新 | 已实现 |
+| P1 | 大文件下载进度与传输取消 | 部分实现：上传有进度与取消；下载由浏览器下载栏承载 |
+| P1 | 多虚拟机配置管理 | 已实现 |
+| P2 | 权限与属主展示 | 已实现（改用原生 SFTP v3 后信息不再丢失） |
+| P2 | 创建目录 / 重命名 / 删除 | **未开放**：连接层已实现并实测通过，但未注册进 HTTP 端点 |
 
-功能分级的完整定义见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
+功能分级与非功能门槛的完整定义见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
 
 ## 快速开始
 
 ```powershell
-# 1. 生成一份本地配置（首次运行会自动创建 data/config.json）
-python app\main.py --init-config
-
-# 2. 启动本地服务（默认只监听 127.0.0.1:8760）
+# 1. 启动本地服务（默认只监听 127.0.0.1:8760，首次运行使用内置默认配置）
 python scripts\start.py
 
-# 3. 浏览器打开
+# 2. 浏览器打开
 #    http://127.0.0.1:8760/
+
+# 3.（可选）生成一份可手工编辑的配置文件 data/config.json
+python app\main.py --init-config
 ```
 
-> 服务**默认只绑定回环地址**。若要开放局域网访问，必须先启用身份验证，
+便携版：解压发行包后双击 `start.cmd` 即可启动，停止用 `stop.cmd`（见 [docs/RELEASE.md](docs/RELEASE.md)）。
+
+> 服务**默认只绑定回环地址**。若要开放局域网访问，必须先理解风险并修改配置，
 > 详见 [docs/SECURITY.md](docs/SECURITY.md)。
 
 ## 系统要求
 
 - **宿主机**：Windows 10/11 x64，Python 3.10+（实测 3.12.10）
-- **OpenSSH 客户端**：Windows 自带 `ssh.exe` / `sftp.exe`（实测 OpenSSH_for_Windows 9.5p2）
-- **目标虚拟机**：Linux，启用 `sshd` 与 SFTP 子系统（实测 CentOS Stream 10）
+- **OpenSSH 客户端**：Windows 自带的 `ssh.exe` / `sftp.exe` / `ssh-keygen.exe`（实测 OpenSSH_for_Windows 9.5p2）
+- **目标机**：Linux，启用 `sshd` 与 SFTP 子系统（集成测试实测环境为 Ubuntu 24.04.2 上的非 root `sshd`）
 - **网络**：宿主机与目标机互通即可，**全程不需要互联网**
 
 ## 文档索引
@@ -55,32 +69,73 @@ python scripts\start.py
 | [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | 功能/非功能需求、优先级、验收条件 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、模块划分、数据流、设计取舍 |
 | [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | 目录用途、命名规范、文件归属 |
-| [docs/API.md](docs/API.md) | HTTP API 定义、参数、响应、错误码 |
-| [docs/SECURITY.md](docs/SECURITY.md) | 威胁模型、认证、密钥保护、路径校验 |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 技术选型、替代方案、决策理由 |
+| [docs/API.md](docs/API.md) | HTTP API 定义、参数、响应、错误码（19 个端点） |
+| [docs/SECURITY.md](docs/SECURITY.md) | 威胁模型、认证、密钥保护、路径校验、残余风险 |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 技术选型、替代方案、决策理由（D-001 ~ D-017） |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发环境、调试方法、代码规范 |
-| [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 测试范围、环境、用例、验收门槛 |
-| [docs/TEST_REPORT.md](docs/TEST_REPORT.md) | **实际**测试执行记录与证据 |
+| [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 测试范围、分层、环境、用例设计原则、验收门槛 |
+| [docs/TEST_REPORT.md](docs/TEST_REPORT.md) | **实际**测试执行记录、验收项结论与证据 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 版本变更记录 |
-| [docs/RELEASE.md](docs/RELEASE.md) | 构建步骤、发行包内容、校验和 |
-| [docs/reports/](docs/reports/) | 阶段报告与故障分析 |
+| [docs/RELEASE.md](docs/RELEASE.md) | 发行说明、构建步骤、发行包内容、校验和 |
+| [docs/reports/](docs/reports/) | 阶段报告（01~06）与最终开发报告 |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | 面向使用者的操作说明 |
 | [.md](.md) | 原始规划文档（用户提供，只读输入） |
+
+## 开发与测试
+
+```powershell
+# 跑全部四层测试（unit / integration / security / e2e）+ 语法校验
+python scripts\test.py
+
+# 只跑不依赖测试床与浏览器的两层
+python scripts\test.py --fast
+
+# 构建前静态校验（8 项：版本一致性、零依赖、离线、凭据纪律等）
+python scripts\build.py
+
+# 打包便携版（默认先跑上面的 8 项校验）
+python scripts\package.py
+```
+
+集成与端到端测试需要一台 Linux 目标机：仓库自带 WSL 测试床脚本
+（`wsl -d Ubuntu bash scripts/testbed_wsl.sh up`，幂等、不需要 root）。
+测试床、浏览器或 Edge 缺失时相关用例**跳过并在报告里显示跳过数**，不会被当成通过。
 
 ## 目录结构
 
 ```
 aimus-web-file-manager/
-├── app/         后端源码（Python 标准库）
-├── frontend/    前端资源（原生 HTML/CSS/JS，离线）
+├── app/         后端源码（Python 标准库，零第三方依赖）
+├── frontend/    前端资源（原生 HTML/CSS/JS，离线，无构建步骤）
 ├── config/      配置模板
-├── tests/       自动化测试
-├── scripts/     开发/启动/打包脚本
-├── docs/        项目文档
+├── tests/       自动化测试（unit / integration / security / e2e）
+├── scripts/     启动、测试、构建、打包脚本
+├── docs/        项目文档与阶段报告（reports/）
 ├── data/        运行时配置与数据（不提交）
 ├── logs/        运行日志（不提交）
-└── dist/        发行包产物（不提交）
+├── dist/        发行包产物（不提交）
+├── LICENSE      MIT 许可证
+└── README.md
 ```
+
+## 安全要点（详见 [docs/SECURITY.md](docs/SECURITY.md)）
+
+- 会话令牌 `X-AWFM-Token` 在进程启动时随机生成，除健康检查外所有 `/api/` 请求强制校验。
+- `Host` 头只接受字面量回环地址（防 DNS 重绑定）；跨站来源与 CORS 预检一律拒绝。
+- 主机密钥策略默认 `strict`：首次连接必须人工核对指纹；指纹变化时**不提供一键接受**。
+- **私钥永远不进入浏览器**；密码不写配置文件、不进日志、不进命令行，只经一次性 `SSH_ASKPASS` 交给 `ssh`。
+- 远程路径全部校验（必须绝对路径、拒绝控制字符、长度上限）；文件传输按 64 KiB 分块流式转发。
+- 日志在格式化阶段统一脱敏（私钥块、`-i <私钥路径>`、`password=`/`token=`/`secret=`）。
+
+## 已知限制
+
+- 只管理 **Linux** 目标机（POSIX 路径语义）；Windows 目标机的路径方言只在设计上预留。
+- HTTP 层只开放**上传**这一种写操作；创建目录、重命名、删除属 P2，已在连接层实现但未暴露。
+- **覆盖上传中断会在目标路径留下被截断的文件**（SFTP v3 的 `RENAME` 不能替换已存在目标），
+  这是本版明确接受的取舍；新建上传走「临时名 + 改名」，不会留下半成品。
+- 未在**真实 CentOS 虚拟机**上验证（集成与端到端跑在 WSL 测试床上）；未做系统级断网验证。
+  这两条已在 [docs/TEST_REPORT.md](docs/TEST_REPORT.md) §8 如实登记，不得当作已通过。
 
 ## 许可证
 
-见 [LICENSE](LICENSE)。
+本项目使用 MIT 许可证，见 [LICENSE](LICENSE)。

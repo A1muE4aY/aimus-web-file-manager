@@ -11,19 +11,17 @@ aimus-web-file-manager/
 │   ├── __init__.py      版本号与包元信息
 │   ├── main.py          服务入口：参数解析、配置装载、HTTP 服务启动
 │   ├── api/             HTTP API 路由与请求处理
-│   ├── core/            配置、日志、错误处理、HTTP 基础设施、路径规范化
-│   ├── services/        连接管理、文件业务逻辑（与传输实现解耦）
-│   ├── ssh/             SSH/SFTP 适配层：子进程调用、选项构建、输出解析
-│   ├── models/          请求、响应与领域数据模型（dataclass）
-│   └── utils/           无业务依赖的通用工具（人类可读格式化、解析器）
-├── frontend/            前端资源
+│   ├── core/            配置装载与校验、错误模型与 HTTP 状态映射
+│   ├── services/        连接管理、会话状态机、文件业务逻辑、传输语义
+│   ├── ssh/             SSH/SFTP 适配层：ssh 子进程、SFTP v3 协议、主机密钥、askpass
+│   ├── models/          领域数据模型（连接、目录条目）
+│   └── utils/           无业务依赖的通用工具：路径校验、日志脱敏、原子写、日志配置
+├── frontend/            前端资源（原生 HTML/CSS/JS，无构建步骤）
 │   ├── index.html
-│   ├── pages/
 │   └── assets/
 │       ├── css/
-│       ├── js/
-│       ├── icons/
-│       └── fonts/
+│       ├── js/          （11 个 ES 模块，见 assets/js/_index.md）
+│       └── icons/
 ├── config/              配置模板与默认配置
 │   ├── config.example.json
 │   └── .gitignore
@@ -33,16 +31,22 @@ aimus-web-file-manager/
 │   ├── e2e/             浏览器端到端（Edge InPrivate）
 │   ├── security/        路径穿越、未授权调用、凭据泄漏、主机密钥
 │   └── fixtures/        测试夹具（合成数据，**不含真实凭据**）
-├── scripts/             开发、测试、启动与打包脚本
-│   ├── start.*
-│   ├── test.*
-│   ├── build.*
-│   └── package.*
+├── scripts/             开发、测试、启动与打包脚本（动词开头）
+│   ├── start.py         启动本地服务（薄包装，转发参数给 app/main.py）
+│   ├── test.py          四层测试批量运行器（unit/integration/security/e2e + 语法校验）
+│   ├── build.py         构建前静态校验（8 项，发行门禁）
+│   ├── package.py       便携版打包、清单校验与自检
+│   └── testbed_wsl.sh   WSL 非 root sshd 测试床（up / status / stop，幂等）
 ├── docs/                设计与交付文档（本层根目录，不再分包子目录）
 │   └── reports/         阶段报告、故障分析、部署记录、最终总结
 ├── data/                运行时配置与数据（.gitignore）
 ├── logs/                运行日志（.gitignore）
 ├── dist/                发行包产物（.gitignore）
+├── LICENSE              MIT 许可证
+├── README.md            项目入口说明
+├── AGENTS.md            本工作区白名单与纪律（唯一权威的顶层条目表）
+├── .gitignore           忽略运行数据、日志与构建产物
+├── .gitattributes       仓库内统一 LF 行尾（scripts/testbed_wsl.sh 要在 WSL 里执行）
 ├── .temp/               会话草稿，可整体清空
 └── .archive/            本项目归档：duplicates/ deps/ junk/ misc/
 ```
@@ -79,7 +83,7 @@ aimus-web-file-manager/
 | Python 测试 | `test_<被测模块>.py` | `tests.py` |
 | 脚本 | 动词开头 + 小写下划线：`build_portable.py` | `test.bat`、`run.py` |
 | 前端资源 | 小写 + 连字符：`file-list.js` | `fileList.js`、`new.js` |
-| 文档 | 大写下划线：`TEST_REPORT.md`；报告 `PHASE-03-NETWORK.md` | `新建文档.md` |
+| 文档 | 大写下划线：`TEST_REPORT.md`；报告 `PHASE-03-CORE.md` | `新建文档.md` |
 | 截图 | `截图<两位序号>-<内容>.png` | UUID 名、系统默认名 |
 | 目录 | 英文小写 + 连字符 | 中文目录名、`新建文件夹`、`temp` |
 

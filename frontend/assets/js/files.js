@@ -1,0 +1,286 @@
+/**
+ * 文件列表：路径导航、排序、选中。
+ *
+ * 这一层只负责「把条目画出来」和「用户点了什么」，不直接发起下载/上传 ——
+ * 那些动作由 app.js 接到回调后交给 transfer.js，避免模块之间互相 import
+ * 形成环。
+ */
+
+import * as api from "./api.js";
+import { $, h, clear, formatSize, formatTime, formatPermissions, typeLabel } from "./util.js";
+import { entryIcon } from "./icons.js";
+import { toast, toastError, toastWarn } from "./toast.js";
+import { state, activeConnection } from "./state.js";
+
+let deps = {
+  onSelectionChange: function () {},
+  onOpenFile: function () {},
+  onPathChange: function () {},
+};
+
+export function initFiles(hooks) {
+  if (hooks) deps = Object.assign(deps, hooks);
+  bindSortHeaders();
+}
+
+function bindSortHeaders() {
+  const headers = document.querySelectorAll("#file-table thead th[data-sort]");
+  for (const th of headers) {
+    th.addEventListener("click", function () {
+      const key = th.getAttribute("data-sort");
+      if (state.sort.key === key) {
+        state.sort.dir = state.sort.dir === "asc" ? "desc" : "asc";
+      } else {
+        state.sort.key = key;
+        state.sort.dir = key === "size" || key === "mtime" ? "desc" : "asc";
+      }
+      renderTable();
+    });
+  }
+}
+
+/* ---------------------------------------------------------------- 加载 */
+
+export async function loadDirectory(path) {
+  const conn = activeConnection();
+  if (!conn) return;
+  setNotice(null);
+  state.loading = true;
+  try {
+    const data = await api.listFiles(conn.id, path);
+    state.path = data.path || path;
+    state.parent = data.parent === undefined ? null : data.parent;
+    state.entries = Array.isArray(data.entries) ? data.entries : [];
+    state.truncated = Boolean(data.truncated);
+    state.total = typeof data.total === "number" ? data.total : state.entries.length;
+    state.selected = null;
+    deps.onSelectionChange(null);
+    render();
+    deps.onPathChange(state.path);
+    if (state.truncated) {
+      setNotice(
+        "warn",
+        "这个目录的条目太多，只显示前 " + state.entries.length + " 项（共 " + state.total + " 项）。"
+      );
+    }
+  } catch (error) {
+    setNotice("error", error.message + (error.detail ? "（" + error.detail + "）" : ""));
+    toastError(error);
+  } finally {
+    state.loading = false;
+  }
+}
+
+export function refresh() {
+  if (activeConnection()) return loadDirectory(state.path);
+  return Promise.resolve();
+}
+
+export function goUp() {
+  if (state.parent) return loadDirectory(state.parent);
+  return Promise.resolve();
+}
+
+/* ---------------------------------------------------------------- 渲染 */
+
+export function render() {
+  renderCrumbs();
+  renderTable();
+  $("#btn-up").disabled = !state.parent;
+}
+
+function renderCrumbs() {
+  const nav = $("#crumbs");
+  clear(nav);
+  nav.appendChild(
+    h("button", {
+      type: "button",
+      class: "crumb",
+      text: "/",
+      title: "/",
+      onClick: function () {
+        loadDirectory("/");
+      },
+    })
+  );
+  const parts = state.path.split("/").filter(Boolean);
+  let accumulated = "";
+  for (const part of parts) {
+    accumulated += "/" + part;
+    const target = accumulated;
+    nav.appendChild(h("span", { class: "crumb-sep", text: "›" }));
+    nav.appendChild(
+      h("button", {
+        type: "button",
+        class: "crumb",
+        text: part,
+        title: target,
+        onClick: function () {
+          loadDirectory(target);
+        },
+      })
+    );
+  }
+}
+
+/** 排序：目录始终在最前，其余按所选列。 */
+function sortEntries(entries) {
+  const key = state.sort.key;
+  const dir = state.sort.dir === "desc" ? -1 : 1;
+  const rank = function (entry) {
+    if (entry.type === "directory") return 0;
+    if (entry.type === "symlink") return 1;
+    return 2;
+  };
+  const copy = entries.slice();
+  copy.sort(function (a, b) {
+    const rankDiff = rank(a) - rank(b);
+    if (rankDiff !== 0) return rankDiff;
+    let result = 0;
+    if (key === "size") result = (a.size || 0) - (b.size || 0);
+    else if (key === "mtime") result = (a.mtime || 0) - (b.mtime || 0);
+    else if (key === "type") {
+      result = String(a.type).localeCompare(String(b.type)) || nameCompare(a, b);
+    } else result = nameCompare(a, b);
+    if (result === 0) result = nameCompare(a, b);
+    return result * dir;
+  });
+  return copy;
+}
+
+function nameCompare(a, b) {
+  return String(a.name).localeCompare(String(b.name), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function renderTable() {
+  const body = $("#file-body");
+  clear(body);
+  const entries = sortEntries(state.entries);
+  for (const entry of entries) body.appendChild(rowNode(entry));
+  $("#dir-empty").hidden = !(state.entries.length === 0 && !state.loading);
+  $("#entry-count").textContent =
+    state.entries.length === 0
+      ? "0 项"
+      : state.entries.length + " 项" + (state.truncated ? "（已截断，共 " + state.total + " 项）" : "");
+
+  const headers = document.querySelectorAll("#file-table thead th[data-sort]");
+  for (const th of headers) {
+    if (th.getAttribute("data-sort") === state.sort.key) th.setAttribute("data-dir", state.sort.dir);
+    else th.removeAttribute("data-dir");
+  }
+}
+
+function rowNode(entry) {
+  const selected = state.selected && state.selected.path === entry.path;
+  const row = h("tr", {
+    "data-type": entry.type,
+    "data-name": entry.name,
+    "data-selected": selected ? "true" : "false",
+    title: entry.path,
+  });
+  if (entry.type === "directory") row.className = "is-dir";
+
+  const nameCell = h("td", { class: "col-name" });
+  const wrap = h("div", { class: "name-cell" }, entryIcon(entry.type, entry.link_broken));
+  wrap.appendChild(
+    h("span", {
+      class: "entry-name" + (entry.type === "symlink" ? " link" : ""),
+      text: entry.name,
+    })
+  );
+  if (entry.link_target) {
+    wrap.appendChild(
+      h("span", {
+        class: "entry-target" + (entry.link_broken ? " broken" : ""),
+        text: "→ " + entry.link_target + (entry.link_broken ? "（断链）" : ""),
+      })
+    );
+  }
+  nameCell.appendChild(wrap);
+  row.appendChild(nameCell);
+
+  row.appendChild(
+    h("td", {
+      class: "col-size",
+      text: entry.type === "directory" ? "—" : formatSize(entry.size),
+    })
+  );
+  row.appendChild(h("td", { class: "col-type", text: typeLabel(entry.type) }));
+  row.appendChild(h("td", { class: "col-perm", text: formatPermissions(entry) }));
+  row.appendChild(
+    h("td", {
+      class: "col-time",
+      text: formatTime(entry.mtime),
+      title: entry.mtime ? new Date(entry.mtime * 1000).toString() : "",
+    })
+  );
+
+  row.addEventListener("click", function () {
+    select(entry);
+  });
+  row.addEventListener("dblclick", function () {
+    activate(entry);
+  });
+  return row;
+}
+
+function select(entry) {
+  state.selected = entry;
+  const body = $("#file-body");
+  for (const row of body.children) {
+    row.setAttribute("data-selected", row.getAttribute("data-name") === entry.name ? "true" : "false");
+  }
+  deps.onSelectionChange(entry);
+}
+
+/** 双击的行为：目录进去，文件交给上层决定（预览）。 */
+export async function activate(entry) {
+  if (entry.type === "directory") return loadDirectory(entry.path);
+  if (entry.type === "symlink") {
+    // 列表里刻意不解析链接目标（/usr/bin 那种目录会慢到秒级），
+    // 所以只有真要打开时才问服务端一次。
+    try {
+      const info = await api.statFile(activeConnection().id, entry.path, true);
+      if (info.type === "directory") return loadDirectory(info.path);
+      deps.onOpenFile(info);
+      return undefined;
+    } catch (error) {
+      toastError(error);
+      return undefined;
+    }
+  }
+  if (entry.type === "file") {
+    deps.onOpenFile(entry);
+    return undefined;
+  }
+  toast("这种类型的条目不能打开。", "warn");
+  return undefined;
+}
+
+export function setNotice(kind, text) {
+  const node = $("#notice");
+  if (!kind || !text) {
+    node.hidden = true;
+    node.textContent = "";
+    return;
+  }
+  node.hidden = false;
+  node.setAttribute("data-kind", kind);
+  node.textContent = text;
+}
+
+/** 切换连接时清空视图，避免上一条连接的目录残留在屏幕上。 */
+export function resetView() {
+  state.path = "/";
+  state.parent = null;
+  state.entries = [];
+  state.selected = null;
+  state.truncated = false;
+  state.total = 0;
+  setNotice(null);
+  render();
+  deps.onSelectionChange(null);
+}

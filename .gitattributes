@@ -1,0 +1,13 @@
+# 行尾纪律：仓库内统一 LF。
+# 关键原因：scripts/*.sh 会在 WSL 里执行，CRLF 会让 shebang / 续行报
+#   "\r: command not found" 这类极难定位的错误。
+* text=auto eol=lf
+
+# 二进制文件不做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+
+# 测试夹具里的 known_hosts 是文本，但必须逐字节稳定
+tests/fixtures/**/known_hosts* -text

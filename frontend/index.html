@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AWFM · 远程文件管理器</title>
+<!--AWFM_TOKEN-->
+<link rel="stylesheet" href="/assets/css/app.css">
+<link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<noscript>
+  <div class="noscript">本工具需要 JavaScript 才能运行。请在浏览器中启用 JavaScript 后刷新页面。</div>
+</noscript>
+
+<div class="app" id="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      <div class="brand-text">
+        <strong>AWFM</strong>
+        <span class="brand-sub">Aimu's Web File Manager</span>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="pill" id="server-status" data-state="unknown">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="server-status-text">正在连接本地服务…</span>
+      </span>
+      <button type="button" class="btn btn-ghost" id="btn-help" title="使用说明">?</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <h2>连接</h2>
+        <button type="button" class="btn btn-small" id="btn-new-connection">+ 新增</button>
+      </div>
+      <ul class="conn-list" id="conn-list" aria-label="连接列表"></ul>
+      <p class="empty-hint" id="conn-empty" hidden>
+        还没有配置任何连接。<br>点右上角「+ 新增」，填入虚拟机的地址与登录方式。
+      </p>
+    </aside>
+
+    <main class="main">
+      <div class="placeholder" id="placeholder">
+        <div class="placeholder-inner">
+          <h1>选择一个连接</h1>
+          <p>左侧列表里的连接点「连接」后，即可在浏览器里浏览该机器上的文件。</p>
+          <p class="muted">
+            浏览器只与本机服务通信；SSH 连接由后端建立，私钥与密码不会发送到浏览器。
+          </p>
+        </div>
+      </div>
+
+      <section class="content" id="content" hidden>
+        <div class="pathbar">
+          <button type="button" class="btn btn-icon" id="btn-up" title="上一级目录" aria-label="上一级目录">↑</button>
+          <nav class="crumbs" id="crumbs" aria-label="路径"></nav>
+          <button type="button" class="btn btn-icon" id="btn-refresh" title="刷新" aria-label="刷新">⟳</button>
+        </div>
+
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <span class="host-info" id="host-info"></span>
+          </div>
+          <div class="toolbar-right">
+            <label class="check" id="write-toggle-wrap" hidden>
+              <input type="checkbox" id="chk-allow-write">
+              <span>允许写操作</span>
+            </label>
+            <button type="button" class="btn" id="btn-preview" disabled>预览</button>
+            <button type="button" class="btn" id="btn-download" disabled>下载</button>
+            <button type="button" class="btn" id="btn-upload" disabled>上传</button>
+            <input type="file" id="file-input" multiple hidden>
+          </div>
+        </div>
+
+        <div class="notice" id="notice" hidden></div>
+
+        <div class="table-wrap">
+          <table class="file-table" id="file-table">
+            <thead>
+              <tr>
+                <th class="col-name" data-sort="name" scope="col">名称</th>
+                <th class="col-size" data-sort="size" scope="col">大小</th>
+                <th class="col-type" data-sort="type" scope="col">类型</th>
+                <th class="col-perm" scope="col">权限</th>
+                <th class="col-time" data-sort="mtime" scope="col">修改时间</th>
+              </tr>
+            </thead>
+            <tbody id="file-body"></tbody>
+          </table>
+          <p class="empty-hint" id="dir-empty" hidden>这个目录是空的。</p>
+        </div>
+
+        <div class="statusbar">
+          <span id="entry-count"></span>
+          <span id="transfer-status"></span>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="modal-root" id="modal-root" hidden>
+  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <header class="modal-head">
+      <h2 id="modal-title">标题</h2>
+      <button type="button" class="btn btn-icon" id="modal-close" aria-label="关闭">×</button>
+    </header>
+    <div class="modal-body" id="modal-body"></div>
+    <footer class="modal-foot" id="modal-foot"></footer>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="/assets/js/app.js"></script>
+</body>
+</html>

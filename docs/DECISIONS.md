@@ -44,7 +44,7 @@
 
 ## D-004 目录列举：`sftp` 批处理模式 + 固定时区/语言环境 —— **已被 D-011 取代**
 
-> **状态：作废（2026-02-11）**。本决策建立在「只能解析 `sftp` CLI 文本输出」这一错误前提上。
+> **状态：作废（2026-10-15）**。本决策建立在「只能解析 `sftp` CLI 文本输出」这一错误前提上。
 > 阶段 02 SPIKE 实测证明可以拿到裸 SFTP 协议通道（D-011），文本解析的全部脆弱点随之消失。
 > 下方内容保留作为**决策演进记录**，实现层**不得**再引用本决策。
 
@@ -188,6 +188,67 @@ drwx******    ? aimu     aimu         4096 Oct 15 00:06 sub
 - **代价**：几乎为零。若用户控制台代码页不是 UTF-8，个别字符可能显示问号，
   但**数据本身不丢失**（JSON 响应与日志文件都是 UTF-8 字节流）。
 
+## D-014 密码从不持久化
+
+- **决策**：配置文件里**没有**密码字段（`app/models/connection.py` 的字段清单里没有它）；密码只在
+  `POST /api/connections/{id}/connect` 的请求体里出现一次，交给一次性的 `SSH_ASKPASS` 辅助程序
+  喂给 `ssh` 子进程，认证结束立即销毁（与 D-008 配套）。密码**不经过命令行参数、也不经过环境变量**。
+- **备选**：把密码写进 `config.json`；或写进系统凭据库（Windows Credential Manager / libsecret）。
+- **理由**：把密码写进本地 JSON，其安全性完全依赖该文件的 ACL；而本项目按 D-001/§1.2 的定位是
+  「普通用户在自己机器上运行」，默认非管理员账户，无法保证 ACL 正确配置。与其提供一个「看起来安全」
+  的选项，不如不提供——用户看不见的风险比多输一次密码更贵。写进系统凭据库则需要引入平台相关依赖，
+  与 D-002 冲突。
+- **代价**：每次重连都要重新输入；界面上从密码切到密钥时密码框可能有残留（已在 `docs/API.md` 5.8 注明）。
+  另一个代价是**无法「后台自动重连」**——这被明确接受：需要的场合应当改用密钥认证。
+- **可核实依据**：`app/models/connection.py`（模块 docstring）、`app/ssh/askpass.py`、
+  `tests/unit/test_connection_model.py:88`、`tests/security/test_credentials.py`（哨兵密码不出现在落盘配置、
+  响应、日志与 `argv` 中）。
+
+## D-015 便携版打包口径：不捆绑 Python，不含 tests/
+
+- **决策**：`scripts/package.py` 产出的便携包 = 仓库的可运行子集
+  （`app/`、`frontend/`、`docs/`、`scripts/start.py`、`README.md`、`LICENSE`、
+  `config/config.example.json`，加上自己生成的 `start.cmd`、`stop.cmd`、`VERSION`、`MANIFEST.json`）；
+  **不捆绑 Python 运行时，也不把 `tests/` 打进去**。包内每个文件在 `MANIFEST.json` 里登记 SHA-256，
+  压缩包整体哈希写进 `dist/SHA256SUMS.txt`。
+- **备选**：PyInstaller / Nuitka 打单文件 exe；把 Python 解释器嵌入包内；把 `tests/` 一并分发。
+- **理由**：项目零第三方依赖（D-002）且静态资源全部自带（验收项 T-002），因此规划文档 §11
+  要求的「解压后运行启动脚本、不要求在线安装依赖」用**一个 Python 3.10+ 解释器 + 本包**即可满足。
+  打包器会带来体积、杀软误报与构建复杂度，而它要解决的唯一问题（解释器）并不比「让用户装一次 Python」
+  更省事，也不符合本项目「可复核」的取向——包里的东西应当一眼看得懂。`tests/` 属于开发版（即仓库本身），
+  进包只会让发行包对最终用户更吵。
+- **代价**：用户须自备 Python 3.10+（`start.cmd` 找不到解释器时明确报错并指向 README 的「系统要求」）；
+  包内不含测试，所以「用户手上这份包能不能跑通测试」不能自证，只能由发行时的
+  `docs/TEST_REPORT.md` 与仓库里的四层测试承担。
+- **自引用问题**：`docs/` 随包分发，所以**不把压缩包自身的 SHA-256 写进包内文档**（写了就自相矛盾：
+  改文档 → 哈希变 → 文档又过期）。校验和只放在 `dist/SHA256SUMS.txt` 与 git 提交信息里。
+
+## D-016 构建前静态校验（`scripts/build.py` 八项）作为发行门禁
+
+- **决策**：`scripts/package.py` 默认先跑 `scripts/build.py` 的八项检查，任一失败即中止打包
+  （`--skip-checks` 可以跳过，但那是给人手动补救用的，不是常规路径）。
+  八项为：Python 版本、语法校验（`SyntaxWarning` 视为错误）、零第三方依赖（ast 扫描 import）、
+  前端离线（frontend 内不得有外部 URL）、凭据纪律、错误模型回归、版本一致性、测试包结构。
+- **理由**：其中五项（依赖数、前端 URL、凭据、版本一致性、测试包结构）属于
+  **「一旦回退也不会被功能测试发现」**的约束——功能全绿照样能违反它们。把它们做成一条可重复执行的
+  本地命令，比写在文档里指望人记住更可靠；这也是规划文档 §11「构建过程可复现」的落点。
+- **代价**：静态检查一定会误报，因此必须允许**写明口径的例外**，而不是随手关掉检查。第一次运行就遇到：
+  `docs/API.md:319` 的示例 JSON 写作 `{"password": "…"}`（占位符），被「填了值的 password 字段」
+  规则命中。处理方式是在检查里显式放行占位符写法（`…`、`...`、`***`、`<...>`、`PASSWORD`、
+  `placeholder`、空串），并把它计入检查输出文本（会打印「1 处示例占位符已放行」）。
+- **防复发**：「错误模型回归」这一项就是 2026-10-15 真实缺陷的闸门——四处代码把类属性 `http_status`
+  当构造参数传（`TypeError` → 500 掩盖真实错误），见 `docs/reports/PHASE-05-OFFLINE-DEPLOY.md`。
+
+## D-017 许可证 = MIT
+
+- **决策**：根目录 `LICENSE` 采用 MIT 许可，版权行 `Copyright (c) 2026 Aimu`。
+- **备选**：Apache-2.0；GPL-3.0；不提供许可（保留全部权利）。
+- **理由**：规划文档 §5 的目录树把 `LICENSE` 列在根目录，属于必须交付的文件；用户未指定许可证，
+  因此选最短、最常见、对个人工具负担最小的宽松许可。它同时满足「可分发便携版」这一形态对使用者
+  的最低要求（明确可以复制、修改、再分发）。
+- **代价**：MIT 不含专利授权与商标条款；若将来要面向更严格的分发环境，需要重新评估并替换
+  `LICENSE` 与 `README.md` 的「许可」一节。更换成本很低，这是选择它的另一个原因。
+
 ---
 
 ## 已收敛的待决策项
@@ -195,7 +256,7 @@ drwx******    ? aimu     aimu         4096 Oct 15 00:06 sub
 | 编号 | 原问题 | 结论 |
 |---|---|---|
 | P-001 | `sftp` 批处理对含空格路径的引用规则 | **作废** —— 不再使用批处理模式（D-011） |
-| P-002 | `SSH_ASKPASS` 能否携带参数 | **待阶段 03 实测**（与 D-008 相关，原定 SPIKE 尚未执行） |
+| P-002 | `SSH_ASKPASS` 能否携带参数 | **已解决**：不用参数，改用「环境变量指向一个一次性秘密文件」的方案（决策 D-008）。实现 `app/ssh/askpass.py`；测试 `tests/unit/test_askpass.py`、`tests/security/test_credentials.py`、`tests/integration/test_password_auth.py` |
 | P-003 | 是否改用 `ssh cat` 取真流式 | **作废** —— 协议层 `READ`/`WRITE` 已提供真流式（D-011） |
 | P-004 | `ls -l` 解析失败的降级策略 | **作废** —— 不再有 `ls -l` 解析（D-011） |
-| P-005 | 「首次连接取主机指纹」的实现方式 | **待实现**：`ssh-keyscan` 在 Windows OpenSSH 9.5p2 上**不可用**（见 `docs/reports/PHASE-02-SPIKE.md`），改用「临时 `UserKnownHostsFile` + `StrictHostKeyChecking=no` 连一次，读回 ssh 自己写入的 host key」 |
+| P-005 | 「首次连接取主机指纹」的实现方式 | **已实现**：`ssh-keyscan` 在 Windows OpenSSH 9.5p2 上**不可用**（见 `docs/reports/PHASE-02-SPIKE.md`），改为「临时 `UserKnownHostsFile` + `StrictHostKeyChecking=no` 连一次，读回 ssh 自己写入的 host key」（`app/ssh/known_hosts.py:221`；这里用 `no` 只是因为采集用的是一张**临时** known_hosts，与「静默接受新密钥」不是一回事，见 `known_hosts.py:22` 与 `:31` 的说明；用户可见的策略取值 `strict`/`accept-new` 由配置项 `host_key_policy` 决定）。实现 `app/ssh/known_hosts.py`（`collect_host_keys`）；测试 `tests/security/test_host_key.py`、`tests/unit/test_known_hosts.py` |

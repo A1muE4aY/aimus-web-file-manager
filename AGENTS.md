@@ -24,7 +24,7 @@
 | `dist/` | 构建产物 | 便携发行包；**已在 .gitignore**，不提交 |
 | `.temp/` | 草稿 | 会话中转；可随时整体清空 |
 | `.archive/` | 归档 | 本项目的 `duplicates/ deps/ junk/ misc/`；**只进不出** |
-| `README.md` `AGENTS.md` `.gitignore` | 根文件 | 允许 |
+| `README.md` `AGENTS.md` `.gitignore` `.gitattributes` | 根文件 | 允许（`.gitattributes` 钉仓库内行尾为 LF：`scripts/testbed_wsl.sh` 在 WSL 里执行，CRLF 会让 shebang 与续行报 `\r: command not found`） |
 | `.md` | 用户输入 | 规划文档原件，**保持原名原位置不动** |
 
 ## 3. 例外与纪律

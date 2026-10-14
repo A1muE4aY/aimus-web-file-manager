@@ -1,0 +1,27 @@
+# tests/unit/ 索引
+
+纯单元测试：不连网、不起进程、不碰真实 SSH。运行：
+
+```powershell
+python -m unittest discover -s tests/unit -t .
+```
+
+| 文件 | 覆盖 |
+|---|---|
+| `test_config.py` | 配置解析与校验、原子保存、默认值（决策 D-006 / D-009） |
+| `test_errors.py` | 错误模型：状态码来自类属性；构造函数拒绝 `http_status=` 关键字；静态扫描 app/ 防复发 |
+| `test_paths.py` | 远程路径与名称校验（验收项 T-008） |
+| `test_redact.py` | 日志脱敏（验收项 T-011） |
+| `test_logging_setup.py` | 日志轮转、UTF-8、格式化阶段脱敏 |
+| `test_atomic.py` | 原子写入不留半截文件 |
+| `test_connection_model.py` | 连接模型校验与「密码从不持久化」 |
+| `test_entry.py` | 文件条目元数据与不跟随符号链接 |
+| `test_filesystem.py` | 排序、截断、预览、写入门禁 |
+| `test_known_hosts.py` | 信任库解析、指纹格式、写入，以及采集失败必须是结构化错误 |
+| `test_askpass.py` | `SSH_ASKPASS` 辅助程序的生命周期与清理（决策 D-008） |
+| `test_ssh_launcher.py` | `ssh` 命令行构造，每条选项对应一次真实故障 |
+| `test_sftp_protocol.py` | SFTP v3 编解码，每个断言对应一次真实踩坑 |
+| `test_request.py` | 请求包装：百分号解码、查询参数、JSON 体 |
+| `test_router.py` | 正则路由器 |
+| `test_tickets.py` | 下载票据 |
+| `test_api_security.py` | API 层安全校验（令牌、Host、来源、方法） |
