@@ -164,6 +164,63 @@ export function cancelSearch(searchId) {
   return request("DELETE", "/api/searches/" + qs(searchId));
 }
 
+/* ------------------------------------------- 在线编辑与文件操作（v0.1.1 阶段四） */
+
+/**
+ * 读取一个远端文本文件，连同保存时用的基线（sha256 / mtime）。
+ *
+ * 后端会拒绝二进制、非 UTF-8、超大与目录，并在错误里说清是哪种情况，
+ * 前端把 message 原样转达即可，不要自己猜。
+ */
+export function readText(id, path) {
+  return request("GET", "/api/connections/" + qs(id) + "/text?path=" + qs(path));
+}
+
+/**
+ * 写回内容。
+ *
+ * baseSha256 / baseMtime 是打开时服务端给的基线：文件在你编辑期间被改过，
+ * 后端会拒绝写入（409 edit_conflict）而不是覆盖别人的修改。
+ * newline 留空 = 沿用文件当前的换行风格，这是常态。
+ */
+export function saveText(id, path, text, options) {
+  const opts = options || {};
+  return request("PUT", "/api/connections/" + qs(id) + "/text", {
+    body: {
+      path: path,
+      text: text,
+      base_sha256: opts.baseSha256 || "",
+      base_mtime: typeof opts.baseMtime === "number" ? opts.baseMtime : null,
+      newline: opts.newline || "",
+      keep_bom: Boolean(opts.keepBom),
+    },
+  });
+}
+
+export function renameEntry(id, path, newName) {
+  return request("POST", "/api/connections/" + qs(id) + "/rename", {
+    body: { path: path, new_name: newName },
+  });
+}
+
+export function deleteEntry(id, path, recursive) {
+  return request("POST", "/api/connections/" + qs(id) + "/delete", {
+    body: { path: path, recursive: Boolean(recursive) },
+  });
+}
+
+export function compressEntry(id, path, name) {
+  return request("POST", "/api/connections/" + qs(id) + "/compress", {
+    body: { path: path, name: name || "" },
+  });
+}
+
+export function extractEntry(id, path, into, overwrite) {
+  return request("POST", "/api/connections/" + qs(id) + "/extract", {
+    body: { path: path, into: into || "", overwrite: Boolean(overwrite) },
+  });
+}
+
 export function uploadCheck(id, directory, filename) {
   return request(
     "GET",

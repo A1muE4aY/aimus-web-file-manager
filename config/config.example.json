@@ -13,6 +13,7 @@
     "session_token_ttl_seconds": 43200,
     "max_upload_bytes": 2147483648,
     "max_download_bytes": 0,
+    "max_edit_bytes": 2097152,
     "log_level": "INFO",
     "redact_secrets": true
   },

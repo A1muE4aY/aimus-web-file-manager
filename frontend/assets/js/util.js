@@ -131,6 +131,22 @@ export const TYPE_LABELS = {
   unknown: "未知",
 };
 
+/**
+ * 名字像不像压缩包。
+ *
+ * 与后端 app/services/fileops.py 的 ARCHIVE_SUFFIXES 保持一致：前端只用它决定
+ * 「解压」按钮出不出现，真正能不能解压由后端说了算（后缀不对就拒绝）。
+ */
+const ARCHIVE_SUFFIXES = [".tar.gz", ".tgz", ".tar", ".zip"];
+
+export function isArchiveName(name) {
+  const text = String(name || "").toLowerCase();
+  for (const suffix of ARCHIVE_SUFFIXES) {
+    if (text.length > suffix.length && text.slice(-suffix.length) === suffix) return true;
+  }
+  return false;
+}
+
 export function typeLabel(type) {
   return TYPE_LABELS[type] || type || "未知";
 }

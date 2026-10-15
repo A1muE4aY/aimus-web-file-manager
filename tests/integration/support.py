@@ -17,6 +17,7 @@ import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 from app.api.http_server import create_server
 from app.core.config import parse_config, project_root
@@ -189,6 +190,9 @@ class Client:
 
     def patch(self, path, body=None, **kwargs):
         return self.request("PATCH", path, body=body, **kwargs)
+
+    def put(self, path, body=None, **kwargs):
+        return self.request("PUT", path, body=body, **kwargs)
 
     def delete(self, path, **kwargs):
         return self.request("DELETE", path, **kwargs)
@@ -397,4 +401,111 @@ def search_and_wait(
     if response.status != 202:
         raise AssertionError("启动搜索失败：%r" % (response,))
     return wait_for_search(client, response.data["search"]["id"], timeout=timeout)
+
+
+# ----------------------------------------------------------------- 阶段四造景
+
+
+EDIT_FIXTURE_ROOT = "/tmp/awfm-edit-fixture"
+
+OPS_FIXTURE_ROOT = "/tmp/awfm-ops-fixture"
+
+#: 在线编辑用的小夹具。__ROOT__ 会被替换成实际根目录（不用 % 格式化，
+#: 免得脚本里的 printf 格式符被 Python 提前吃掉）。
+_EDIT_FIXTURE_SCRIPT = r"""
+set -e
+root=__ROOT__
+chmod -R u+rwX "$root" 2>/dev/null || true
+rm -rf "$root"
+mkdir -p "$root/sub"
+printf 'hello\nworld\n' > "$root/plain.txt"
+printf 'a\r\nb\r\n' > "$root/crlf.txt"
+: > "$root/empty.txt"
+printf 'no final newline' > "$root/nonl.txt"
+printf '\357\273\277with bom\n' > "$root/bom.txt"
+printf 'read only\n' > "$root/readonly.txt"
+chmod 0444 "$root/readonly.txt"
+printf 'link target\n' > "$root/real.txt"
+ln -sf "$root/real.txt" "$root/link.txt"
+printf 'inside\n' > "$root/sub/nested.txt"
+head -c 4096 /dev/zero > "$root/zeros.bin"
+head -c 8192 /dev/zero | tr '\0' 'a' > "$root/eight-k.txt"
+echo READY
+"""
+
+#: 文件操作用的夹具：要改名/删除/压缩/解压的素材都摆在这里。
+_OPS_FIXTURE_SCRIPT = r"""
+set -e
+root=__ROOT__
+chmod -R u+rwX "$root" 2>/dev/null || true
+rm -rf "$root"
+mkdir -p "$root/tree/a/b" "$root/emptydir" "$root/target-dir"
+printf 'rename me\n' > "$root/rename-me.txt"
+printf 'keep\n' > "$root/existing.txt"
+printf 'other\n' > "$root/other.txt"
+printf 'leaf\n' > "$root/tree/a/b/leaf.txt"
+printf 'mid\n' > "$root/tree/a/mid.txt"
+printf 'archive payload\n' > "$root/pack.txt"
+printf 'target\n' > "$root/target.txt"
+printf 'kept\n' > "$root/target-dir/kept.txt"
+ln -sf "$root/target.txt" "$root/link.txt"
+ln -sf "$root/target-dir" "$root/dir-link"
+echo READY
+"""
+
+
+@contextlib.contextmanager
+def _testbed_fixture(script: str, root: str):
+    """摆好夹具，结束后整棵删掉（先放开权限，否则删不掉只读条目）。"""
+    testbed_command(script.replace("__ROOT__", root))
+    try:
+        yield root
+    finally:
+        testbed_command(
+            'chmod -R u+rwX "%s" 2>/dev/null || true; rm -rf "%s"' % (root, root),
+            check=False,
+        )
+
+
+def edit_fixture():
+    """在线编辑用的夹具。yield 根目录。"""
+    return _testbed_fixture(_EDIT_FIXTURE_SCRIPT, EDIT_FIXTURE_ROOT)
+
+
+def ops_fixture():
+    """文件操作用的夹具。yield 根目录。"""
+    return _testbed_fixture(_OPS_FIXTURE_SCRIPT, OPS_FIXTURE_ROOT)
+
+
+def connection_url(connection_id: str, suffix: str, *, path: str = "") -> str:
+    """拼一个带 path 查询参数的连接级接口地址（路径按 URL 规则编码）。"""
+    url = "/api/connections/%s/%s" % (quote(connection_id, safe=""), suffix)
+    if path:
+        url += "?path=" + quote(path, safe="")
+    return url
+
+
+def upload_bytes(client, directory: str, name: str, data: bytes, *, overwrite: bool = True,
+                 connection_id: str = "wsl-testbed"):
+    """用 AWFM 自己的上传接口往测试床放一个文件（造夹具时比 shell 更可控）。"""
+    query = "?path=%s&name=%s" % (quote(directory, safe=""), quote(name, safe=""))
+    if overwrite:
+        query += "&overwrite=1"
+    return client.request(
+        "POST",
+        "/api/connections/%s/upload%s" % (connection_id, query),
+        body=data,
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+
+def download_bytes(client, path: str, *, connection_id: str = "wsl-testbed") -> bytes:
+    """走票据流程把远端文件完整取回本地（用于核对压缩包内容）。"""
+    ticket = client.post("/api/connections/%s/download-ticket" % connection_id, {"path": path})
+    if ticket.status != 200:
+        raise AssertionError("取下载票据失败：%r" % (ticket,))
+    response = client.get(ticket.data["url"], token=False)
+    if response.status != 200:
+        raise AssertionError("下载失败：%r" % (response,))
+    return response.raw
 

@@ -7,15 +7,29 @@
  */
 
 import * as api from "./api.js";
-import { $, h, clear, formatSize, formatTime, formatPermissions, typeLabel } from "./util.js";
+import {
+  $,
+  h,
+  clear,
+  formatSize,
+  formatTime,
+  formatPermissions,
+  typeLabel,
+  isArchiveName,
+} from "./util.js";
 import { entryIcon } from "./icons.js";
 import { toast, toastError, toastWarn } from "./toast.js";
-import { state, activeConnection } from "./state.js";
+import { state, activeConnection, allowWrite } from "./state.js";
 
 let deps = {
   onSelectionChange: function () {},
   onOpenFile: function () {},
   onPathChange: function () {},
+  onEdit: function () {},
+  onRename: function () {},
+  onDelete: function () {},
+  onCompress: function () {},
+  onExtract: function () {},
 };
 
 export function initFiles(hooks) {
@@ -306,6 +320,8 @@ function rowNode(entry) {
     })
   );
 
+  row.appendChild(actionCell(entry));
+
   row.addEventListener("click", function () {
     select(entry);
   });
@@ -313,6 +329,48 @@ function rowNode(entry) {
     activate(entry);
   });
   return row;
+}
+
+/**
+ * 「操作」列：把条目级动作放在行内。
+ *
+ * 两个细节都是刻意的：
+ * - 写操作按钮在连接未开写权限时直接禁用：省一次注定被拒的往返。真正的把关在
+ *   服务端 —— 每个写入口都会重新检查 allow_write，界面禁用只是提示。
+ * - 每个按钮都 stopPropagation：否则点按钮会先触发整行的选中，删除这种动作
+ *   会连带把选中项换掉，让人以为自己删的是别的条目。
+ */
+function actionCell(entry) {
+  const conn = activeConnection();
+  const writable = Boolean(conn && allowWrite(conn.id));
+  const box = h("div", { class: "row-actions" });
+  const actions = [];
+  if (entry.type === "file") {
+    actions.push(["编辑", "btn-edit-entry", true, function () { deps.onEdit(entry); }]);
+  }
+  if (entry.type === "file" && isArchiveName(entry.name)) {
+    actions.push(["解压", "btn-extract-entry", writable, function () { deps.onExtract(entry); }]);
+  }
+  actions.push(["重命名", "btn-rename-entry", writable, function () { deps.onRename(entry); }]);
+  actions.push(["压缩", "btn-compress-entry", writable, function () { deps.onCompress(entry); }]);
+  actions.push(["删除", "btn-delete-entry", writable, function () { deps.onDelete(entry); }]);
+  for (const action of actions) {
+    box.appendChild(
+      h("button", {
+        type: "button",
+        class: "btn btn-small " + action[1],
+        text: action[0],
+        disabled: !action[2],
+        onClick: function (event) {
+          event.stopPropagation();
+          action[3]();
+        },
+      })
+    );
+  }
+  const cell = h("td", { class: "col-action" });
+  cell.appendChild(box);
+  return cell;
 }
 
 function select(entry) {

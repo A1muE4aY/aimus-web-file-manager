@@ -13,6 +13,8 @@ import * as connections from "./connections.js";
 import * as files from "./files.js";
 import * as transfer from "./transfer.js";
 import * as search from "./search.js";
+import * as edit from "./edit.js";
+import * as fileops from "./fileops.js";
 import { openPreview } from "./preview.js";
 import { state, activeConnection, allowWrite, isConnected, connectionById } from "./state.js";
 
@@ -42,6 +44,7 @@ function updateToolbar() {
   $("#host-info").textContent = connected ? hostInfo(conn) : "";
   $("#btn-up").disabled = !connected || !state.parent;
   $("#btn-preview").disabled = !(connected && selectable);
+  $("#btn-edit").disabled = !(connected && edit.canEdit(selected));
   $("#btn-download").disabled = !(connected && selectable);
   $("#btn-upload").disabled = !(connected && allowWrite(conn.id));
   $("#chk-allow-write").checked = Boolean(connected && allowWrite(conn.id));
@@ -75,9 +78,40 @@ function handleLocate(parent, name) {
 }
 
 function handleOpenFile(entry) {
-  openPreview(entry, function (target) {
-    transfer.downloadEntry(target);
-  });
+  openPreview(
+    entry,
+    function (target) {
+      transfer.downloadEntry(target);
+    },
+    function (target) {
+      edit.openEditor(target);
+    }
+  );
+}
+
+function handleEdit(entry) {
+  edit.openEditor(entry);
+}
+
+function handleRename(entry) {
+  fileops.renameEntry(entry);
+}
+
+function handleDelete(entry) {
+  fileops.deleteEntry(entry);
+}
+
+function handleCompress(entry) {
+  fileops.compressEntry(entry);
+}
+
+function handleExtract(entry) {
+  fileops.extractEntry(entry);
+}
+
+/** 写操作改动了远端，列表里的大小与修改时间必须跟着更新，否则像是没生效。 */
+function handleSaved() {
+  files.refresh();
 }
 
 async function toggleWrite(event) {
@@ -128,7 +162,9 @@ function showHelp() {
   body.appendChild(
     block("怎么用", [
       "在左侧「+ 新增」里填目标机的地址与登录方式，然后点「连接」。",
-      "双击目录进入，双击文件预览；也可以用上方按钮下载。",
+      "双击目录进入，双击文件预览（预览是只读的，不会改动远端文件）；也可以用上方按钮下载。",
+      "选中文本文件后点「编辑」可以在线修改并保存；保存前会核对文件有没有被别人改过，有冲突时不会覆盖别人的内容。",
+      "「操作」列里可以重命名、压缩成 .tar.gz、解压与删除条目；这些按钮要先打开「允许写操作」。",
       "在搜索框里输入名称回车，会在当前目录及其子目录里递归找文件名；结果里点「定位」直接跳到那个目录。",
       "顶部路径条可以点任意一级直接跳回去。",
       "「允许写操作」默认关闭；打开后才可以上传与覆盖远端文件。",
@@ -160,6 +196,9 @@ function bindHandlers() {
   });
   $("#btn-preview").addEventListener("click", function () {
     if (state.selected) handleOpenFile(state.selected);
+  });
+  $("#btn-edit").addEventListener("click", function () {
+    if (state.selected) edit.openEditor(state.selected);
   });
   $("#btn-download").addEventListener("click", function () {
     if (state.selected) transfer.downloadEntry(state.selected);
@@ -199,8 +238,15 @@ async function boot() {
     onSelectionChange: updateToolbar,
     onOpenFile: handleOpenFile,
     onPathChange: updateToolbar,
+    onEdit: handleEdit,
+    onRename: handleRename,
+    onDelete: handleDelete,
+    onCompress: handleCompress,
+    onExtract: handleExtract,
   });
   search.initSearch({ onLocate: handleLocate });
+  edit.initEdit({ onSaved: handleSaved });
+  fileops.initFileops({ onChanged: handleSaved });
   transfer.initTransfer({
     onChanged: function () {
       files.refresh();

@@ -21,6 +21,7 @@ class ErrorCodeTests(unittest.TestCase):
         "PathNotFound": ("path_not_found", 404),
         "PermissionDenied": ("permission_denied", 403),
         "SearchBusy": ("search_busy", 409),
+        "EditConflict": ("edit_conflict", 409),
         "RemoteError": ("remote_error", 502),
         "ProtocolError": ("protocol_error", 502),
         "OperationTimeout": ("timeout", 504),

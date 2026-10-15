@@ -11,9 +11,10 @@ python -m unittest discover -s tests/integration -t .
 
 | 文件 | 覆盖 |
 |---|---|
-| `support.py` | 公共支撑：定位测试床、构造连接配置、起临时 HTTP 服务、统计残留 ssh 进程（验收项 T-013）、`testbed_command` 造景、`search_fixture` 检索树（中文名 / 无权限目录 / 符号链接 / 目录环 / 大量文件） |
+| `support.py` | 公共支撑：定位测试床、构造连接配置、起临时 HTTP 服务、统计残留 ssh 进程（验收项 T-013）、`testbed_command` 造景、`search_fixture` 检索树（中文名 / 无权限目录 / 符号链接 / 目录环 / 大量文件）、`edit_fixture` / `ops_fixture` 编辑与文件操作夹具、`upload_bytes` / `download_bytes` 走完整 HTTP 往返取字节、`Client.put` |
 | `test_api_flow.py` | HTTP 主链路：连接 → 列目录 → 预览 → 上传 → 下载 → 断开（T-001 / T-003 / T-006 / T-009） |
 | `test_connection_flow.py` | 连接层主链路：真实 `ssh`/`sftp` 子进程、错误路径、进程清理 |
 | `test_password_auth.py` | 密码认证链路：断言服务端日志出现 `Failed password for <user>`（非 root 测试床读不到 /etc/shadow，所以只证明密码送达） |
 | `test_write_permission_sync.py` | 写权限同步（阶段一缺陷①）：全程只从 HTTP API 进入，覆盖「改配置 → 活动会话立刻生效」 |
-| `test_search_api.py` | 检索 API（15 项）：中文名 / 大小写 / 嵌套与 depth / 空结果非错误 / 无权限目录被跳过并上报 / 符号链接不跟随且不越界 / 取消 / 并发 409 / 断连原因 / 检索期间列目录不受影响 |
+| `test_edit_api.py` | 在线编辑 API（31 项）：读文本元数据与换行/BOM、保存后字节回到远端、内容与 mtime 冲突 409、只读文件 403、写权限关闭 401、`security.max_edit_bytes` 生效（413） |
+| `test_fileops_api.py` | 文件操作 API（30 项）：重命名 / 删除（含递归与两类符号链接回归）/ 压缩成 .tar.gz 并核验成员 / 解压（zip 与 tar、重复解压跳过、覆盖）/ 越界归档整包拒绝 / 只读连接四个写入口 401 / 压缩解压不新增 ssh 进程 |

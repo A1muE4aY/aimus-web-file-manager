@@ -1,8 +1,10 @@
 # AWFM HTTP API 参考
 
-> 本文是 AWFM 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 22 个端点**、错误码全表，以及版本策略与「已在连接层实现但首版不通过 HTTP 暴露」的写操作。
+> 本文是 AWFM 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 28 个端点**、错误码全表，以及版本策略与写操作的分级和门禁。
 >
-> 文档日期 **2026-10-16** · 版本 `app/__init__.py:7`（`0.1.0`；v0.1.1 开发中，已新增第 20~22 号检索端点）· 路由注册处 `app/api/handlers.py:294`（`ENDPOINTS`）与 `app/api/handlers.py:320`（`build_router()`）
+> 文档日期 **2026-10-16** · 版本 `app/__init__.py:7`（`0.1.0`；v0.1.1 开发中，已新增第 20~22 号检索端点、第 23~28 号在线编辑与文件操作端点）· 路由注册处 `app/api/handlers.py:434`（`ENDPOINTS`）与 `app/api/handlers.py:466`（`build_router()`）
+>
+> 文中的 `handlers.py:NN` / `errors.py:NN` 行号按本文日期的工作树核对。v0.1.1 期间往 `ENDPOINTS` 里插端点会让旧行号漂移，引用时请以**函数名**为准。
 
 ---
 
@@ -18,12 +20,12 @@
 | 协议版本 | HTTP/1.1（`protocol_version = "HTTP/1.1"`，因此响应必须给出 `Content-Length` 或 `Connection: close`） | `app/api/http_server.py:95` |
 | 认证 | 除 `GET /api/health` 外，所有 `/api/` 请求都必须带 `X-AWFM-Token` 头 | `app/api/security.py:44`、`:48`、`:132` |
 | 并发 | `ThreadingHTTPServer`，每请求一线程 | `app/api/http_server.py:81` |
-| 端点总数 | 22 | `app/api/handlers.py:294-317` |
+| 端点总数 | 28 | `app/api/handlers.py:434-463` |
 
 端点分成三组：
 
 - **连接级**（不需要已连接的会话，挂在 `/api/connections` 与 `/api/connections/{connection_id}` 之下）：`/api/connections` 的增删改查、`connect`、`disconnect`、`status`、`host-keys`、`host-keys/trust`；
-- **会话级**（必须已连接，否则 `404 session_not_found`）：`files`、`stat`、`preview`、`download-ticket`、`download`、`upload`、`upload-check`、`search`；
+- **会话级**（必须已连接，否则 `404 session_not_found`）：`files`、`stat`、`preview`、`download-ticket`、`download`、`upload`、`upload-check`、`search`、`text`（GET 读 / PUT 写）、`rename`、`delete`、`compress`、`extract`；
 - **检索级**（只认检索 id，与具体连接解耦）：`GET`/`DELETE /api/searches/{search_id}`。检索是异步的：`POST …/search` 拿 id，之后轮询或中止都走这两个地址。
 
 ---
@@ -158,27 +160,35 @@ Content-Type: application/json
 | # | 方法 | 路径 | 处理函数 | 说明 |
 |---|---|---|---|---|
 | 1 | GET | `/api/health` | `health`（`handlers.py:26`） | 健康检查，免令牌 |
-| 2 | GET | `/api/session` | `session_info`（`:38`） | 服务与安全策略摘要 |
-| 3 | GET | `/api/connections` | `list_connections`（`:57`） | 连接配置列表 + 会话状态 |
-| 4 | POST | `/api/connections` | `create_connection`（`:65`） | 新增连接（201） |
-| 5 | GET | `/api/connections/{connection_id}` | `get_connection`（`:61`） | 单条连接配置 |
-| 6 | PATCH | `/api/connections/{connection_id}` | `update_connection`（`:73`） | 局部更新 |
-| 7 | DELETE | `/api/connections/{connection_id}` | `delete_connection`（`:79`） | 删除并先断开 |
-| 8 | POST | `/api/connections/{connection_id}/connect` | `connect`（`:84`） | 建立（或重建）会话 |
-| 9 | POST | `/api/connections/{connection_id}/disconnect` | `disconnect`（`:98`） | 断开（幂等） |
-| 10 | GET | `/api/connections/{connection_id}/status` | `connection_status`（`:103`） | 会话状态 |
-| 11 | GET | `/api/connections/{connection_id}/host-keys` | `list_host_keys`（`:107`） | 信任库中该主机的指纹 |
-| 12 | POST | `/api/connections/{connection_id}/host-keys/trust` | `trust_host_key`（`:112`） | 用户确认后写入信任库 |
-| 13 | GET | `/api/connections/{connection_id}/files` | `list_files`（`:131`） | 列目录 |
-| 14 | GET | `/api/connections/{connection_id}/stat` | `stat_file`（`:137`） | 单个路径的元数据 |
-| 15 | GET | `/api/connections/{connection_id}/preview` | `preview_file`（`:144`） | 文本预览（只读、有上限） |
-| 16 | POST | `/api/connections/{connection_id}/download-ticket` | `download_ticket`（`:155`） | 换取下载票据 |
-| 17 | GET | `/api/connections/{connection_id}/download` | `download_file`（`:178`） | 二进制流下载 |
-| 18 | POST | `/api/connections/{connection_id}/upload` | `upload_file`（`:224`） | 上传（201 新建 / 200 覆盖） |
-| 19 | GET | `/api/connections/{connection_id}/upload-check` | `check_upload`（`:278`） | 上传前的覆盖预检 |
-| 20 | POST | `/api/connections/{connection_id}/search` | `start_search`（`:161`） | 启动检索（**202**，后台线程里跑） |
-| 21 | GET | `/api/searches/{search_id}` | `search_status`（`:181`） | 轮询检索进度 / 取结果 |
-| 22 | DELETE | `/api/searches/{search_id}` | `cancel_search`（`:185`） | 请求中止（幂等） |
+| 2 | GET | `/api/session` | `session_info`（`:38`） | 服务与安全策略摘要（含 `max_edit_bytes`） |
+| 3 | GET | `/api/connections` | `list_connections`（`:58`） | 连接配置列表 + 会话状态 |
+| 4 | POST | `/api/connections` | `create_connection`（`:68`） | 新增连接（201） |
+| 5 | GET | `/api/connections/{connection_id}` | `get_connection`（`:62`） | 单条连接配置 |
+| 6 | PATCH | `/api/connections/{connection_id}` | `update_connection`（`:76`） | 局部更新 |
+| 7 | DELETE | `/api/connections/{connection_id}` | `delete_connection`（`:82`） | 删除并先断开 |
+| 8 | POST | `/api/connections/{connection_id}/connect` | `connect`（`:88`） | 建立（或重建）会话 |
+| 9 | POST | `/api/connections/{connection_id}/disconnect` | `disconnect`（`:102`） | 断开（幂等） |
+| 10 | GET | `/api/connections/{connection_id}/status` | `connection_status`（`:110`） | 会话状态 |
+| 11 | GET | `/api/connections/{connection_id}/host-keys` | `list_host_keys`（`:114`） | 信任库中该主机的指纹 |
+| 12 | POST | `/api/connections/{connection_id}/host-keys/trust` | `trust_host_key`（`:119`） | 用户确认后写入信任库 |
+| 13 | GET | `/api/connections/{connection_id}/files` | `list_files`（`:138`） | 列目录 |
+| 14 | GET | `/api/connections/{connection_id}/stat` | `stat_file`（`:144`） | 单个路径的元数据 |
+| 15 | GET | `/api/connections/{connection_id}/preview` | `preview_file`（`:151`） | 文本预览（只读、有上限） |
+| 16 | POST | `/api/connections/{connection_id}/download-ticket` | `download_ticket`（`:193`） | 换取下载票据 |
+| 17 | GET | `/api/connections/{connection_id}/download` | `download_file`（`:216`） | 二进制流下载 |
+| 18 | POST | `/api/connections/{connection_id}/upload` | `upload_file`（`:262`） | 上传（201 新建 / 200 覆盖） |
+| 19 | GET | `/api/connections/{connection_id}/upload-check` | `check_upload`（`:279`） | 上传前的覆盖预检 |
+| 20 | POST | `/api/connections/{connection_id}/search` | `start_search`（`:162`） | 启动检索（**202**，后台线程里跑） |
+| 21 | GET | `/api/searches/{search_id}` | `search_status`（`:182`） | 轮询检索进度 / 取结果 |
+| 22 | DELETE | `/api/searches/{search_id}` | `cancel_search`（`:186`） | 请求中止（幂等） |
+| 23 | GET | `/api/connections/{connection_id}/text` | `read_text`（`:294`） | 读出文本供在线编辑（只读操作，不需要写权限） |
+| 24 | PUT | `/api/connections/{connection_id}/text` | `save_text`（`:308`） | 保存文本，带冲突检测（写操作） |
+| 25 | POST | `/api/connections/{connection_id}/rename` | `rename_entry`（`:356`） | 重命名条目（写操作） |
+| 26 | POST | `/api/connections/{connection_id}/delete` | `delete_entry`（`:369`） | 删除文件 / 目录（目录非空要显式递归） |
+| 27 | POST | `/api/connections/{connection_id}/compress` | `compress_entry`（`:386`） | 压缩成 `.tar.gz`（**201**） |
+| 28 | POST | `/api/connections/{connection_id}/extract` | `extract_entry`（`:402`） | 解压（**201**） |
+
+第 23~28 号是 v0.1.1 阶段四新增的写入口，全部受连接级 `allow_write` 开关约束（见 §7.2）。
 
 以下所有示例都省略了请求头 `X-AWFM-Token`（除健康检查外都必须有），`connection_id` 一律用 `vm1`。
 
@@ -675,31 +685,233 @@ Content-Type: application/json
 - 中止后活动槽立刻释放，同一条连接可以马上发起下一次检索。
 - 可能的错误：`unauthorized`（401）、`path_not_found`（404）。
 
----
+### 5.23 GET /api/connections/{connection_id}/text
 
+- 查询参数：`path`（必填，目标**文件**的绝对路径）。
+- 用途：在线编辑前把文件读进浏览器。返回的 `text` 已经做过**换行归一**——`CRLF` 与单独的 `CR` 都折成 `LF`，原始风格记在 `newline` 里，保存时按它写回，不会把 CRLF 文件悄悄变成 LF。BOM 会被剥掉并在 `bom` 里记号。
+- 这是**读操作**：没开写权限的连接同样可以读（`allow_write` 只管写）。
+
+```json
+{
+  "ok": true,
+  "data": {
+    "file": {
+      "path": "/home/aimu/notes.txt",
+      "name": "notes.txt",
+      "size": 12,
+      "mtime": 1792000000,
+      "mode": "0644",
+      "sha256": "4a1e67f2fe1d1cc7b31d0ca2ec441da4778203a036a77da10344c85e24ff0f92",
+      "text": "hello\nworld\n",
+      "encoding": "utf-8",
+      "bom": false,
+      "newline": "lf",
+      "mixed_newlines": false,
+      "final_newline": true,
+      "limit": 2097152
+    },
+    "limits": { "max_edit_bytes": 2097152, "encodings": ["utf-8"], "newlines": ["lf", "crlf", "cr"] }
+  }
+}
+```
+
+- `sha256` 是**文件原始字节**的哈希（未归一换行、未剥 BOM），保存时用它做冲突检测的基准；`size` 也是原始字节数。
+- 拒绝规则（按检查顺序）：
+
+| 情况 | 结果 |
+|---|---|
+| 路径是目录 | `invalid_request` 400（「目录不能作为文本编辑。」） |
+| 不是普通文件（且不是指向普通文件的符号链接） | `invalid_request` 400（「只有普通文件可以在线编辑。」） |
+| 超过 `security.max_edit_bytes`（默认 2 MiB） | `payload_too_large` 413（`extra` 带 `path`/`size`/`limit`） |
+| 含 NUL 字节，或控制字符占比过高 | `invalid_request` 400（「这个文件看起来不是文本文件，不能在线编辑。」） |
+| 去掉 BOM 后不是合法 UTF-8 | `invalid_request` 400（「这个文件的编码不是 UTF-8，无法安全地在线上编辑。」，`extra.offset` 是第一个坏字节的位置） |
+
+- **二进制与其它编码一律不猜**：宁可拒绝并说清原因，也不按 latin-1 硬解——那会把文件悄悄改坏（决策口径见 §7.2）。
+- 符号链接按它指向的文件处理：`path` 会被规范化成真实路径，保存也写在目标文件上。
+- 可能的错误：`invalid_request`（400）、`payload_too_large`（413）、`session_not_found`（404）、`path_not_found`（404）、`permission_denied`（403）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）、`unauthorized`（401，缺令牌）。
+
+### 5.24 PUT /api/connections/{connection_id}/text
+
+保存一次在线编辑。请求体是 JSON：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `path` | 是 | 目标文件的绝对路径 |
+| `text` | 是 | 新的完整内容（`""` 是合法值，表示保存成空文件） |
+| `base_sha256` | 二选一 | 打开时读到的 `sha256`；服务端保存前会重新读一遍文件比对 |
+| `base_mtime` | 二选一 | 打开时读到的 `mtime`；只有这一项时按时间戳判断 |
+| `newline` | 否 | `""`（默认，**沿用文件当前风格**）/ `"lf"` / `"crlf"` / `"cr"` |
+| `keep_bom` | 否 | 布尔，默认 `false`；为真时在开头写回 UTF-8 BOM |
+
+- **形状检查先于取会话**：缺 `path`/`text`、`text` 不是字符串、`base_mtime` 不是整数（或给了布尔）、`newline` 不在允许集合里……都在拿到会话之前就返回 400，因此这些错误不会随连接状态变成 409 或 404。
+- 冲突检测（**保存前重新确认，前端按钮状态不作数**）：
+
+| 基准 | 判定 | 冲突时 |
+|---|---|---|
+| `base_sha256` | 重新读一遍文件算哈希 | `409 edit_conflict`，`extra.reason = "content"`（`extra` 还带当前的 `mtime`） |
+| `base_sha256` 且文件已超过上限 | 读不完 | `409 edit_conflict`，`extra.reason = "size"` |
+| `base_mtime`（没有哈希时） | 比时间戳 | `409 edit_conflict`，`extra.reason = "mtime"` |
+| 两个都没给 | — | `400 invalid_request`（「保存时必须带上 base_sha256 或 base_mtime。」） |
+
+- 写入顺序（**先落临时文件，再改名**，避免中途断线留下半截文件）：写 `<名字>.awfm-bak-<8 位随机>`（同时校验写入字节数）→ 把原名改成 `<名字>.awfm-bak-<另一随机>` 备份 → 临时文件改名到原名 → 删备份。任何一步失败都会尽量把备份改回原名，并在 `remote_error` 里说清「已尝试回滚」。
+- 保存是**整份重写**：换行风格、BOM、文件权限位（`mode` 的 `0o777` 部分）都会保留，其它元数据（属主、时间戳除外）不承诺保持。
+- 成功（200）：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "file": {
+      "path": "/home/aimu/notes.txt",
+      "name": "notes.txt",
+      "size": 13,
+      "mtime": 1792000123,
+      "mode": "0644",
+      "sha256": "92a241a87965fe3f00a696dfbd4f4417c36db2981e94fe0702b6fe35e76a842c",
+      "bytes_written": 13,
+      "encoding": "utf-8",
+      "bom": false,
+      "newline": "lf",
+      "saved": true
+    }
+  }
+}
+```
+
+- 界面拿返回的 `size` 与 `mtime` 刷新文件列表——保存成功后列表里的这两列必须跟着变，否则用户会以为没保存上。
+- 可能的错误：`invalid_request`（400，含形状与编码）、`unauthorized`（401：令牌或写权限）、`permission_denied`（403：文件本身没有写位，`extra.mode` 是当前的八进制权限）、`payload_too_large`（413）、`path_not_found`（404：保存时文件已被删除）、`edit_conflict`（409）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
+
+### 5.25 POST /api/connections/{connection_id}/rename
+
+重命名一个条目（文件、目录或符号链接）。请求体：
+
+```json
+{ "path": "/home/aimu/notes.txt", "new_name": "notes-2026.txt" }
+```
+
+- `new_name` 必须是**单个分量**（不含 `/`、不是 `.`/`..`、≤255 字节，见 `app/utils/paths.py` 的 `validate_remote_name`）。
+- 改的是**用户点中的那个条目本身**：对符号链接只改链接名，不会动它指向的文件（服务层只对父目录做 `realpath`，最后一段不解析）。
+- 拒绝：根目录 → `invalid_request`（「不能重命名根目录。」）；新旧同名 → `invalid_request`（「新名称与原名相同。」）；目标已存在 → `invalid_request`（「目标位置已经存在同名条目。」，`extra.exists = true`，`extra.type` 是目标类型）；源不存在 → `path_not_found`（由远端 `RENAME` 报出）。
+- 需要写权限；SFTP v3 的 `RENAME` 不覆盖已存在目标，这条限制正好被当成「不覆盖」的依据。
+
+成功（200）：
+
+```json
+{ "ok": true, "data": { "entry": { "path": "/home/aimu/notes.txt", "name": "notes.txt", "new_path": "/home/aimu/notes-2026.txt", "new_name": "notes-2026.txt", "type": "file", "size": 12, "mtime": 1792000000 } } }
+```
+
+- 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
+
+### 5.26 POST /api/connections/{connection_id}/delete
+
+删除文件、符号链接或目录。请求体：
+
+```json
+{ "path": "/home/aimu/old-notes", "recursive": false }
+```
+
+- `recursive` 默认 `false`。目录非空且没有显式递归 → `invalid_request`（「目录不是空的，需要显式确认递归删除。」），**`extra.entries` 给出条目数**，界面拿它弹第二次确认。
+- 递归删除是深度优先的：读目录用的是 `lstat` 语义的条目属性，因此**符号链接不会被跟进去**；条目总数超过 10000 或层级超过 64 会**中途停下**并返回 400（`extra.removed` 说明已经删掉了多少）——一次请求不会无限制地删下去。
+- 删除符号链接只删链接本身，链接指向的文件/目录不受影响；根目录 → `invalid_request`（「不能删除根目录。」）。
+- 需要写权限。
+
+成功（200）：
+
+```json
+{ "ok": true, "data": { "deleted": { "path": "/home/aimu/old-notes", "name": "old-notes", "type": "directory", "recursive": true, "removed": { "files": 2, "directories": 2 }, "entries": 4 } } }
+```
+
+- 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
+
+### 5.27 POST /api/connections/{connection_id}/compress
+
+把一个条目打包成 `.tar.gz`，放在它旁边。请求体：
+
+```json
+{ "path": "/home/aimu/notes", "name": "" }
+```
+
+- `name` 缺省时用条目自己的名字；没有 `.tar.gz`/`.tgz`/`.tar`/`.zip` 后缀会自动补 `.tar.gz`（本版只产出 `.tar.gz`）。名字同样按 `validate_remote_name` 校验。
+- 打包规则：GNU tar 格式；目录递归入包并保留相对路径；**符号链接以链接本身入包**（`readlink` 的目标写进 `linkname`，不展开目标内容）；其它特殊类型（设备、FIFO、socket）记进 `skipped` 并跳过。gzip 的 `mtime` 固定为 0，同样内容得到同样的字节。
+- 上限：10000 个条目、512 MiB 原始字节，超过即 `invalid_request`（`extra` 带 `limit`）。目标已存在 → `invalid_request`（`extra.exists = true`）。根目录不能压缩。
+- 需要写权限。整个压缩在**本地进程内**流式完成（`app/services/fileops.py` 的 `_add_to_tar` 直接从 SFTP 读块喂给 `tarfile`），**不在远端执行 `tar`**。
+
+成功（**201**）：
+
+```json
+{ "ok": true, "data": { "archive": { "source": "/home/aimu/notes", "path": "/home/aimu/notes.tar.gz", "name": "notes.tar.gz", "format": "tar.gz", "size": 4561, "mtime": 1792000123, "entries": 8, "bytes": 4138, "skipped": [] } } }
+```
+
+`size` 是压缩包自身的大小，`bytes` 是原始数据合计。
+- 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
+
+### 5.28 POST /api/connections/{connection_id}/extract
+
+解压一个压缩包。请求体：
+
+```json
+{ "path": "/home/aimu/notes.tar.gz", "into": "/home/aimu/unpacked", "overwrite": false }
+```
+
+- 支持 `.tar.gz`、`.tgz`、`.tar`、`.zip`；其它后缀 → `invalid_request`（「这个文件不是支持的压缩包。」）。
+- `into` 缺省是压缩包所在的目录。目标目录不存在时会**只创建最后一级**（多级路径写错不会被静默造出来）；目标存在但不是目录 → `invalid_request`（「解压目标不是目录。」）。
+- `overwrite` 默认 `false`：目标已存在的文件会被跳过，名字列在 `existing` 里（界面提示「已跳过 N 个」）；同名**目录**与文件冲突 → `invalid_request`；`overwrite = true` 时先删再写。
+- **成员路径逐个校验**：绝对路径、含 `..` 段、含 NUL、含非法分量名（`` 统一按 `/` 处理后判断）都会**整包拒绝**（400），不做「跳过这个成员」的折中——一个想往包外写的压缩包不该被部分执行。
+- 符号链接与硬链接成员、非普通文件成员会被跳过，原因写进 `skipped`（`code` 为 `symlink_skipped` 或 `unsupported_type`）。
+- 上限：10000 个条目、512 MiB 写出字节。触到上限时不是失败，而是**停下来并保留已经解出来的部分**，原因放在 `stopped` 里（界面按提示处理）。
+- 需要写权限；解压在本地进程内完成，**不在远端执行 `tar`/`unzip`**。
+
+成功（**201**）：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "extract": {
+      "path": "/home/aimu/notes.tar.gz",
+      "name": "notes.tar.gz",
+      "format": "tar.gz",
+      "destination": "/home/aimu/unpacked",
+      "entries": 8,
+      "files": 5,
+      "directories": 2,
+      "bytes": 4138,
+      "skipped": [{ "name": "link.txt", "code": "symlink_skipped", "message": "符号链接与硬链接不在解压范围内，已跳过。" }],
+      "existing": ["notes.txt"],
+      "stopped": null,
+      "overwrite": false
+    }
+  }
+}
+```
+
+- 可能的错误：`invalid_request`（400，含成员越界与上限）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`payload_too_large`（413，压缩包自身过大）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502，含「解压写出的字节数与压缩包记录不一致」）、`timeout`（504）。
+
+---
 ## 6 错误码全表
 
 错误类型定义在 `app/core/errors.py`，每个类自带 `code` 与 `http_status`。
 
 | `code` | HTTP | 触发场景 | 定义处 |
 |---|---|---|---|
-| `invalid_request` | 400 | 请求参数不合法（路径、名称、主机名、端口、JSON 结构、缺字段、方法不符） | `errors.py:79` |
-| `unauthorized` | 401 | 令牌缺失/不正确、下载票据无效、连接未开启写权限、跨站来源 | `errors.py:103` |
-| `auth_failed` | 401 | SSH 认证失败（用户名/密钥/密码不被接受） | `errors.py:133` |
-| `permission_denied` | 403 | 远端拒绝访问（SFTP `STATUS` 3） | `errors.py:172` |
-| `connection_not_found` | 404 | 配置里没有这个连接 id | `errors.py:114` |
-| `session_not_found` | 404 | 会话不存在或尚未建立（请先点「连接」） | `errors.py:119` |
-| `path_not_found` | 404 | 远程路径不存在（SFTP `STATUS` 2）；静态资源不存在；接口路径不存在 | `errors.py:165` |
-| `not_connected` | 409 | 会话存在但通道已断开（SFTP `STATUS` 6/7） | `errors.py:126` |
-| `host_key_unknown` | 409 | 首次连接，主机密钥未经用户确认（`extra.fingerprints`） | `errors.py:140` |
-| `host_key_mismatch` | 409 | 主机密钥与信任库记录不符，必须人工介入 | `errors.py:151` |
-| `search_busy` | 409 | 同一条连接上已有正在进行的检索（`app/services/search.py` 的 `SearchRegistry.start`） | `errors.py:193` |
-| `payload_too_large` | 413 | 请求体超过 1 MiB，或文件超过 `max_upload_bytes` / `max_download_bytes` | `errors.py:86` |
-| `internal_error` | 500 | 未预期的内部异常；端口被占用、绑定地址不可用 | `errors.py:198` |
-| `config_error` | 500 | 配置文件损坏/不可读/写失败；找不到 `ssh` 客户端 | `errors.py:93` |
-| `remote_error` | 502 | 远端返回其它错误（SFTP `STATUS` 4 或未映射码） | `errors.py:179` |
-| `protocol_error` | 502 | SFTP 协议层异常：帧不合法、序列错位、通道提前关闭 | `errors.py:186` |
-| `timeout` | 504 | 操作超时（看门狗杀掉 `ssh` 子进程） | `errors.py:193` |
+| `invalid_request` | 400 | 请求参数不合法（路径、名称、主机名、端口、JSON 结构、缺字段、方法不符、二进制或非 UTF-8 文件、压缩包成员越界） | `errors.py:81` |
+| `unauthorized` | 401 | 令牌缺失/不正确、下载票据无效、连接未开启写权限、跨站来源 | `errors.py:105` |
+| `auth_failed` | 401 | SSH 认证失败（用户名/密钥/密码不被接受） | `errors.py:135` |
+| `permission_denied` | 403 | 远端拒绝访问（SFTP `STATUS` 3）；编辑时文件本身没有写位 | `errors.py:174` |
+| `connection_not_found` | 404 | 配置里没有这个连接 id | `errors.py:116` |
+| `session_not_found` | 404 | 会话不存在或尚未建立（请先点「连接」） | `errors.py:121` |
+| `path_not_found` | 404 | 远程路径不存在（SFTP `STATUS` 2）；保存时文件已被删除；静态资源不存在；接口路径不存在 | `errors.py:167` |
+| `not_connected` | 409 | 会话存在但通道已断开（SFTP `STATUS` 6/7） | `errors.py:128` |
+| `host_key_unknown` | 409 | 首次连接，主机密钥未经用户确认（`extra.fingerprints`） | `errors.py:142` |
+| `host_key_mismatch` | 409 | 主机密钥与信任库记录不符，必须人工介入 | `errors.py:153` |
+| `search_busy` | 409 | 同一条连接上已有正在进行的检索（`app/services/search.py` 的 `SearchRegistry.start`） | `errors.py:195` |
+| `edit_conflict` | 409 | 保存时远端文件已被改动（`extra.reason` 为 `content`/`size`/`mtime`），拒绝覆盖他人修改 | `errors.py:210` |
+| `payload_too_large` | 413 | 请求体超过 1 MiB，或文件超过 `max_upload_bytes` / `max_download_bytes` / `security.max_edit_bytes` | `errors.py:88` |
+| `internal_error` | 500 | 未预期的内部异常；端口被占用、绑定地址不可用 | `errors.py:226` |
+| `config_error` | 500 | 配置文件损坏/不可读/写失败；找不到 `ssh` 客户端 | `errors.py:95` |
+| `remote_error` | 502 | 远端返回其它错误（SFTP `STATUS` 4 或未映射码）；保存时改名/替换失败 | `errors.py:181` |
+| `protocol_error` | 502 | SFTP 协议层异常：帧不合法、序列错位、通道提前关闭；写入字节数与预期不符 | `errors.py:188` |
+| `timeout` | 504 | 操作超时（看门狗杀掉 `ssh` 子进程） | `errors.py:221` |
 
 ---
 
@@ -710,20 +922,27 @@ Content-Type: application/json
 - 应用版本在 `app/__init__.py:7`（当前 `0.1.0`），通过 `Server` 响应头与 `GET /api/health`、`GET /api/session` 暴露。API 路径**不带版本前缀**——这是本地单用户服务，前后端同版本发布、同一次启动一起加载（前端资源由同一个进程提供），因此不需要 URL 版本协商。
 - 配置文件有自己的版本号：`CONFIG_VERSION = 1`（`app/core/config.py` 的 `DEFAULTS["config_version"]`）。读到**更高版本**的配置文件会拒绝启动，而不是猜测字段含义；配置损坏时同样报 `config_error`，**绝不静默重置**（决策 D-006）。
 - 前端在启动时先调 `GET /api/session`，可以据此判断服务能力（例如 `max_upload_bytes`、`max_download_bytes`、`host_key_policy`），比硬编码版本号更稳。
-- **v0.1.1 开发中**：本版本在 v0.1.0 之上增加了远端文件检索（第 20~22 号端点）。`app/__init__.py` 里的版本号目前仍是 `0.1.0`，待阶段六交付时统一改为 `0.1.1` 并重新打包；端点路径、响应信封与既有端点的行为都不变（纯新增）。
+- **v0.1.1 开发中**：本版本在 v0.1.0 之上增加了远端文件检索（第 20~22 号端点）与在线编辑、文件操作（第 23~28 号端点）。`app/__init__.py` 里的版本号目前仍是 `0.1.0`，待阶段六交付时统一改为 `0.1.1` 并重新打包；端点路径、响应信封与既有端点的行为都不变（纯新增）。
+- **v0.1.1 新增的配置键**：`security.max_edit_bytes`（默认 `2097152`，即 2 MiB，允许 1024 ~ 64 MiB）。它同时出现在 `GET /api/session` 的返回里；在线编辑的读与写都按它设上限，**服务端是唯一权威**（前端只用来提示）。
 
-### 7.2 已在连接层实现、首版不通过 HTTP 暴露的写操作
+### 7.2 写操作的分级与门禁
 
-以下方法在 `app/ssh/sftp_client.py` 中已实现并在阶段 02 的测试床上实测通过，但按规划文档 §3.1 属于 **P2**（远程创建目录/重命名/删除），首版**没有**注册到 `ENDPOINTS` 中：
+v0.1.1 阶段四把「远端文本编辑 + 压缩 / 重命名 / 解压 / 删除」做成了端点，但暴露的是**语义化操作**，不是 SFTP 原语：
 
-| 方法 | 代码位置 | 对应 SFTP 请求 |
-|---|---|---|
-| `SftpClient.mkdir(path, mode=0o755)` | `app/ssh/sftp_client.py:267` | `SSH_FXP_MKDIR` |
-| `SftpClient.rmdir(path)` | `app/ssh/sftp_client.py:276` | `SSH_FXP_RMDIR` |
-| `SftpClient.remove(path)` | `app/ssh/sftp_client.py:285` | `SSH_FXP_REMOVE` |
-| `SftpClient.rename(old, new)` | `app/ssh/sftp_client.py:294` | `SSH_FXP_RENAME` |
+- **HTTP 上的写入口**（第 24~28 号，加上第 18 号上传）：`PUT …/text`、`rename`、`delete`、`compress`、`extract`、`upload`。每个入口只做「形状检查 → 取会话 → 调服务层 → 包响应」，规则都写在服务层里（`app/services/editor.py`、`app/services/fileops.py`、`app/services/transfer.py`）。
+- **SFTP 原语仍然没有直接的 HTTP 出口**：`mkdir` / `rmdir` / `remove` / `rename`（`app/ssh/sftp_client.py`）只被服务层调用；`open_write` 只出现在保存文本、压缩、解压三处。
+- **唯一没有对应端点的是 `mkdir`**：它只在解压目标目录不存在时被用来建**最后一级**目录，路径写错不会被静默造出一串空目录。
 
-代码注释写的是「仅在稳定性验证后启用」。规划文档 §3.2 同时要求：远程删除、覆盖、编辑属于高风险操作，必须在只读浏览稳定之后单独设计，并带二次确认、路径检查与操作记录。因此本版唯一暴露的写操作是上传，且受连接级 `allow_write` 开关约束（`app/services/filesystem.py:179` `require_write_permission`）。
+三道门禁，缺一不可：
+
+1. **连接级 `allow_write`**：每个写入口的第一句就是 `require_write_permission(...)`（`app/services/filesystem.py:179`），关闭时一律 `401 unauthorized`（`extra.connection_id` 指出是哪条连接）。界面上的按钮置灰只是提示，**服务端不拿它当依据**。
+2. **服务层校验**：绝对路径与名字合法性（`app/utils/paths.py`）、目标是否已存在、文件是否有写位、压缩包成员是否越界、条目与字节上限、保存时的冲突检测（§5.24）。
+3. **前端二次确认**：覆盖上传、删除（目录非空时再问一次「连同内容一起删除」）、重命名到已存在的名字、保存冲突都由用户再点一次，取消就是取消。
+
+两条贯穿所有写操作的口径：
+
+- **破坏性操作只作用于用户点中的那个条目**：重命名、删除、压缩只对**父目录**做 `realpath`，最后一段不解析——否则「删除链接」会删掉链接指向的真实文件（这是阶段四实测发现并修掉的一个真实缺陷，回归用例见 `tests/unit/test_fileops.py` 与 `tests/integration/test_fileops_api.py`）。编辑与解压按内容语义处理，跟随符号链接。
+- **压缩与解压在本地进程内完成**（Python 的 `tarfile` / `gzip` / `zipfile` 直接读写 SFTP 字节流），**不在远端执行 `tar` / `unzip`**：任务书 T-013 要求不为这类功能在远端执行任意命令；检索同理，只走既有 SFTP 通道。
 
 ### 7.3 静态资源
 
@@ -739,8 +958,8 @@ Content-Type: application/json
 - 请求解析与响应：`app/api/request.py`、`app/api/responses.py`
 - 服务与安全：`app/api/http_server.py`、`app/api/security.py`、`app/api/tickets.py`
 - 错误模型：`app/core/errors.py`；配置与默认值：`app/core/config.py`
-- 服务层：`app/services/connection_manager.py`、`app/services/session.py`、`app/services/filesystem.py`、`app/services/transfer.py`、`app/services/search.py`（检索的后台线程、预算与截断、跳过目录、中止）
+- 服务层：`app/services/connection_manager.py`、`app/services/session.py`、`app/services/filesystem.py`、`app/services/transfer.py`、`app/services/search.py`（检索的后台线程、预算与截断、跳过目录、中止）、`app/services/editor.py`（在线编辑：二进制与编码拒绝、换行与 BOM 保全、冲突检测、临时文件 + 改名写入）、`app/services/fileops.py`（重命名 / 删除 / 压缩 / 解压：上限、成员路径校验、符号链接策略）
 - 连接层：`app/ssh/sftp_client.py`、`app/ssh/sftp_transport.py`、`app/ssh/sftp_protocol.py`、`app/ssh/known_hosts.py`、`app/ssh/askpass.py`、`app/ssh/ssh_launcher.py`
 - 数据模型与工具：`app/models/connection.py`、`app/models/entry.py`、`app/utils/paths.py`
-- 前端调用方：`frontend/assets/js/api.js`、`frontend/assets/js/app.js`、`frontend/assets/js/transfer.js`、`frontend/assets/js/search.js`（检索面板：发起、轮询、中止、清空、定位）、`frontend/index.html`
-- 相关文档：`.md`（§3.1 功能分级、§3.2 首版不做、§4.2 API 草案、§10 安全要求）、`docs/DECISIONS.md`（D-006/D-007/D-009/D-010/D-014）、`docs/ARCHITECTURE.md`、`docs/SECURITY.md`
+- 前端调用方：`frontend/assets/js/api.js`、`frontend/assets/js/app.js`、`frontend/assets/js/transfer.js`、`frontend/assets/js/search.js`（检索面板：发起、轮询、中止、清空、定位）、`frontend/assets/js/edit.js`（编辑器对话框：只读提示、冲突后的重新加载、取消前询问）、`frontend/assets/js/fileops.js`（重命名 / 删除 / 压缩 / 解压对话框与二次确认）、`frontend/index.html`
+- 相关文档：`2.md`（AWFM v0.1.1 开发任务书：§3.1 功能分级、§3.2 首版不做、§4.2 API 草案、§10 安全要求）、`docs/DECISIONS.md`（D-006/D-007/D-009/D-010/D-014）、`docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/reports/PHASE-03-SEARCH.md`、`docs/reports/PHASE-04-EDIT.md`

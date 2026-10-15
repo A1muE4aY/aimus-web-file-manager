@@ -58,6 +58,7 @@ DEFAULTS: dict[str, Any] = {
         "session_token_ttl_seconds": 43200,
         "max_upload_bytes": 2147483648,
         "max_download_bytes": 0,
+        "max_edit_bytes": 2097152,
         "log_level": "INFO",
         "redact_secrets": True,
     },
@@ -115,6 +116,9 @@ class SecurityConfig:
     session_token_ttl_seconds: int = 43200
     max_upload_bytes: int = 2147483648
     max_download_bytes: int = 0
+    #: 在线编辑单次读写的字节上限（默认 2 MiB）。比上传上限小得多：
+    #: 编辑要把内容整体放进浏览器的一个 textarea，几十 MB 的「文本」不是给编辑器用的。
+    max_edit_bytes: int = 2097152
     log_level: str = "INFO"
     redact_secrets: bool = True
 
@@ -265,7 +269,7 @@ _ROOT_KEYS = frozenset({"config_version", "server", "security", "ssh", "connecti
 _SERVER_KEYS = frozenset({"host", "port", "open_browser", "request_timeout_seconds"})
 _SECURITY_KEYS = frozenset({
     "allow_lan", "host_key_policy", "session_token_ttl_seconds",
-    "max_upload_bytes", "max_download_bytes", "log_level", "redact_secrets",
+    "max_upload_bytes", "max_download_bytes", "max_edit_bytes", "log_level", "redact_secrets",
 })
 _SSH_KEYS = frozenset({
     "connect_timeout_seconds", "command_timeout_seconds", "keepalive_interval_seconds",
@@ -328,6 +332,12 @@ def parse_config(data: Any, *, path: str = "") -> AppConfig:
         max_download_bytes=_require_int(
             security_raw.get("max_download_bytes", 0),
             "security.max_download_bytes", minimum=0, maximum=10 * 1024**4,
+        ),
+        # 下限 1 KiB：真正的下限由编辑器自己定，配置层只需要挡住 0 与负数，
+        # 否则「所有文件都不能编辑」会被当成程序坏了。
+        max_edit_bytes=_require_int(
+            security_raw.get("max_edit_bytes", 2097152),
+            "security.max_edit_bytes", minimum=1024, maximum=64 * 1024 * 1024,
         ),
         log_level=log_level,
         redact_secrets=_require_bool(security_raw.get("redact_secrets", True), "security.redact_secrets"),

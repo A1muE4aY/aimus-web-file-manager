@@ -15,7 +15,7 @@ from app.api.request import ApiRequest
 from app.api.responses import begin_stream, send_ok
 from app.core.errors import AwfmError, Unauthorized, ValidationError
 from app.models.connection import Connection
-from app.services import filesystem, search as search_service, transfer
+from app.services import editor, fileops, filesystem, search as search_service, transfer
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,10 @@ def session_info(ctx, req: ApiRequest) -> None:
             "host_key_policy": ctx.config.security.host_key_policy,
             "max_upload_bytes": ctx.config.security.max_upload_bytes,
             "max_download_bytes": ctx.config.security.max_download_bytes,
+            "max_edit_bytes": ctx.config.security.max_edit_bytes,
             "allow_lan": ctx.config.security.allow_lan,
-        # 主机密钥变化时界面要明确告诉用户去改哪个文件（不提供一键接受）。
-        "known_hosts_path": ctx.config.known_hosts_path,
+            # 主机密钥变化时界面要明确告诉用户去改哪个文件（不提供一键接受）。
+            "known_hosts_path": ctx.config.known_hosts_path,
         },
     )
 
@@ -282,6 +283,145 @@ def check_upload(ctx, req: ApiRequest, connection_id: str) -> None:
     send_ok(req.handler, transfer.check_upload_target(session, directory, filename))
 
 
+# --------------------------------------------------------------------- 在线编辑
+
+
+def _edit_limit(ctx) -> int:
+    """在线编辑的单次字节上限（security.max_edit_bytes）。"""
+    return ctx.config.security.max_edit_bytes
+
+
+def read_text(ctx, req: ApiRequest, connection_id: str) -> None:
+    """读取远端文本文件，连同冲突检测的基线（sha256 / mtime）一起交给前端。"""
+    session = _session(ctx, connection_id)
+    path = req.require_query("path")
+    limit = _edit_limit(ctx)
+    send_ok(
+        req.handler,
+        {
+            "file": editor.read_text_file(session, path, max_bytes=limit),
+            "limits": editor.describe_limits(limit),
+        },
+    )
+
+
+def save_text(ctx, req: ApiRequest, connection_id: str) -> None:
+    """把编辑器里的内容写回远端。
+
+    写权限与内容冲突都在服务端重新确认（见 app/services/editor.py）：
+    前端按钮是否可用只是提示，不能当成授权。
+    """
+    payload = req.json()
+    if not isinstance(payload, dict):
+        raise ValidationError("请求体必须是一个 JSON 对象。")
+    path = payload.get("path")
+    text = payload.get("text")
+    base_sha256 = payload.get("base_sha256", "")
+    base_mtime = payload.get("base_mtime")
+    newline = payload.get("newline", "")
+    keep_bom = payload.get("keep_bom", False)
+    # 与 start_search 同一条纪律：形状检查先于找会话，畸形请求的错误不该随连接状态变化。
+    if not isinstance(path, str) or not path:
+        raise ValidationError("缺少 path。")
+    if not isinstance(text, str):
+        raise ValidationError("缺少 text（要保存的内容），或它不是字符串。")
+    if not isinstance(base_sha256, str):
+        raise ValidationError("base_sha256 必须是字符串。")
+    if base_mtime is not None and (isinstance(base_mtime, bool) or not isinstance(base_mtime, int)):
+        raise ValidationError("base_mtime 必须是整数。")
+    if newline not in ("", "lf", "crlf", "cr"):
+        raise ValidationError(
+            "newline 取值非法。",
+            detail="只允许 lf、crlf、cr，或留空表示沿用文件当前的换行风格。",
+        )
+    if not isinstance(keep_bom, bool):
+        raise ValidationError("keep_bom 必须是布尔值。")
+    session = _session(ctx, connection_id)
+    result = editor.save_text_file(
+        session,
+        path,
+        text,
+        base_sha256=base_sha256,
+        base_mtime=base_mtime,
+        newline=newline,
+        keep_bom=keep_bom,
+        max_bytes=_edit_limit(ctx),
+    )
+    send_ok(req.handler, {"file": result})
+
+
+# --------------------------------------------------------------------- 文件操作
+
+
+def rename_entry(ctx, req: ApiRequest, connection_id: str) -> None:
+    """重命名：只改同一目录内的名字，不做跨目录移动。"""
+    payload = req.json()
+    path = payload.get("path")
+    new_name = payload.get("new_name")
+    if not isinstance(path, str) or not path:
+        raise ValidationError("缺少 path。")
+    if not isinstance(new_name, str) or not new_name:
+        raise ValidationError("缺少 new_name。")
+    session = _session(ctx, connection_id)
+    send_ok(req.handler, {"entry": fileops.rename_entry(session, path, new_name)})
+
+
+def delete_entry(ctx, req: ApiRequest, connection_id: str) -> None:
+    """删除文件、符号链接或目录。
+
+    recursive 必须由调用方显式给出 —— 目录非空而没带它时服务端拒绝执行：
+    这是删除这类不可撤销操作的兜底，界面上漏了一次确认，服务端还有一道。
+    """
+    payload = req.json()
+    path = payload.get("path")
+    recursive = payload.get("recursive", False)
+    if not isinstance(path, str) or not path:
+        raise ValidationError("缺少 path。")
+    if not isinstance(recursive, bool):
+        raise ValidationError("recursive 必须是布尔值。")
+    session = _session(ctx, connection_id)
+    send_ok(req.handler, {"deleted": fileops.delete_entry(session, path, recursive=recursive)})
+
+
+def compress_entry(ctx, req: ApiRequest, connection_id: str) -> None:
+    """把远端条目打包成 .tar.gz。
+
+    压缩在 AWFM 进程里做、字节流走 SFTP 写回，不为它在远端执行任何命令（T-013）。
+    """
+    payload = req.json()
+    path = payload.get("path")
+    name = payload.get("name", "")
+    if not isinstance(path, str) or not path:
+        raise ValidationError("缺少 path。")
+    if not isinstance(name, str):
+        raise ValidationError("name 必须是字符串。")
+    session = _session(ctx, connection_id)
+    send_ok(req.handler, {"archive": fileops.compress_entry(session, path, name=name)}, status=201)
+
+
+def extract_entry(ctx, req: ApiRequest, connection_id: str) -> None:
+    """把远端压缩包解开到远端目录。
+
+    tar.gz / tar / zip 都在 Python 侧解析与写出，同样不碰远端命令。
+    """
+    payload = req.json()
+    path = payload.get("path")
+    into = payload.get("into", "")
+    overwrite = payload.get("overwrite", False)
+    if not isinstance(path, str) or not path:
+        raise ValidationError("缺少 path。")
+    if not isinstance(into, str):
+        raise ValidationError("into 必须是字符串。")
+    if not isinstance(overwrite, bool):
+        raise ValidationError("overwrite 必须是布尔值。")
+    session = _session(ctx, connection_id)
+    send_ok(
+        req.handler,
+        {"extract": fileops.extract_entry(session, path, into=into, overwrite=overwrite)},
+        status=201,
+    )
+
+
 def _ascii_header_value(value: str) -> str:
     """HTTP 头只能是 latin-1 字节。含非 ASCII 的路径要百分号编码，
     否则 `send_header` 会直接抛 `UnicodeEncodeError`。"""
@@ -314,6 +454,12 @@ ENDPOINTS: list[tuple[str, str, Any]] = [
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/search", start_search),
     ("GET", r"/api/searches/(?P<search_id>[0-9a-f]+)", search_status),
     ("DELETE", r"/api/searches/(?P<search_id>[0-9a-f]+)", cancel_search),
+    ("GET", r"/api/connections/(?P<connection_id>[^/]+)/text", read_text),
+    ("PUT", r"/api/connections/(?P<connection_id>[^/]+)/text", save_text),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/rename", rename_entry),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/delete", delete_entry),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/compress", compress_entry),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/extract", extract_entry),
 ]
 
 

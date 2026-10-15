@@ -24,6 +24,8 @@
     not_connected          409  会话存在但底层通道已断开
     remote_error           502  远端返回了其他错误（SFTP STATUS 4/其他）
     protocol_error         502  SFTP 协议层异常（帧格式错误、通道提前关闭）
+    search_busy            409  同一条连接上已经有一个正在进行的搜索
+    edit_conflict          409  文件在编辑期间被改动过，保存被拒绝（不覆盖他人修改）
     timeout                504  操作超时
     config_error           500  配置文件损坏或不可读
     internal_error         500  未预期的内部异常
@@ -198,6 +200,21 @@ class SearchBusy(AwfmError):
     """
 
     code = "search_busy"
+    http_status = 409
+
+
+# --------------------------------------------------------------------------
+# 在线编辑
+# --------------------------------------------------------------------------
+
+class EditConflict(AwfmError):
+    """文件在「打开编辑」到「保存」之间被改动过。
+
+    宁可让用户重来一次，也不覆盖别人的修改：覆盖是静默的，而冲突提示是可见的。
+    前端的按钮状态不能当作依据 —— 这一步必须在服务端拿内容哈希比出来。
+    """
+
+    code = "edit_conflict"
     http_status = 409
 
 

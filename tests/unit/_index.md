@@ -27,3 +27,6 @@ python -m unittest discover -s tests/unit -t .
 | `test_api_security.py` | API 层安全校验（令牌、Host、来源、方法） |
 | `test_permission_sync.py` | 写权限同步（阶段一缺陷①）：活动会话持有的连接必须可热更新，而不是建连时的快照 |
 | `test_search.py` | 检索服务（36 项）：匹配与排序、depth 语义、四道预算与截断、跳过与取消、单连接并发限制 |
+| `fake_sftp.py` | 内存版 SFTP 假件（不是 mock）：真跑 tar/zip 字节流与权限语义、rename 不覆盖、offline 抛 NotConnected，供在线编辑与文件操作单测使用 |
+| `test_editor.py` | 在线编辑（43 项）：文本识别与二进制/非 UTF-8 拒绝、换行与 BOM 记忆、sha256/mtime 冲突、备份改名与回滚、无残留临时文件 |
+| `test_fileops.py` | 文件操作（60 项）：重命名、递归删除的预算与深度、压缩包布局与符号链接以链接本身入包、解压的越界拒绝与覆盖策略 |

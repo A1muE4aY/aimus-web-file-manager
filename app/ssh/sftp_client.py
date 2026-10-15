@@ -196,6 +196,20 @@ class SftpClient:
         finally:
             self.close(handle)
 
+    @contextmanager
+    def open_write(self, path: str, *, mode: int = 0o644) -> Iterator[bytes]:
+        """以只写方式打开（不存在则新建、存在则截断），退出时保证关闭。
+
+        `TRUNC` 是刻意的：压缩、解压、保存文本都是**整体重写**一个文件，
+        留下旧内容的尾巴会造成「文件看起来对、内容却是两段拼的」这种最难查的错误。
+        """
+        pflags = proto.SSH_FXF_WRITE | proto.SSH_FXF_CREAT | proto.SSH_FXF_TRUNC
+        handle = self.open(path, pflags, mode)
+        try:
+            yield handle
+        finally:
+            self.close(handle)
+
     def download_chunks(self, path: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Iterator[bytes]:
         """流式读取文件。**不把整个文件放进内存**（决策 D-007）。
 
@@ -300,3 +314,147 @@ class SftpClient:
             accept_status=_OK,
             context=f"重命名 {old_path}",
         )
+
+
+class ChunkWriter:
+    """把「往文件对象里写」翻译成「按偏移写远端文件」。
+
+    `gzip` / `tarfile` / `zipfile` 只认文件对象，它们调用 `write(data)`；
+    这里负责维护偏移量并落到 SFTP 的 WRITE。内存里始终只有一个块（决策 D-007）：
+    压缩一个几百 MB 的目录不会让进程占用跟着涨。
+    """
+
+    def __init__(self, client: SftpClient, handle: bytes) -> None:
+        self._client = client
+        self._handle = handle
+        self.offset = 0
+
+    def write(self, data: bytes) -> int:
+        """从当前偏移往后追加，返回写入的字节数。"""
+        if not data:
+            return 0
+        self._client.write_chunk(self._handle, self.offset, data)
+        self.offset += len(data)
+        return len(data)
+
+    def flush(self) -> None:
+        """对齐文件对象接口：每次 WRITE 都已落到远端，这里没有缓冲区可冲。"""
+        return None
+
+    def tell(self) -> int:
+        return self.offset
+
+    def seekable(self) -> bool:
+        """只支持顺序追加，不支持回退（压缩流不需要）。"""
+        return False
+
+    def writable(self) -> bool:
+        return True
+
+    def close(self) -> None:
+        """只标记自身。真正的句柄归 `open_write` 的上下文管理器所有。"""
+        return None
+
+
+class RandomReader:
+    """把「按位置读」暴露成文件对象，供 `zipfile` / `tarfile` 随机读取远端文件。
+
+    `read(-1)` 会把整份内容读进内存，只应由压缩包库在确实需要时触发
+    （zipfile 读中央目录就是这样）；常规路径下这里每次只取一个
+    `DEFAULT_CHUNK_SIZE` 块。
+    """
+
+    def __init__(self, client: SftpClient, handle: bytes, *, size: int | None = None) -> None:
+        self._client = client
+        self._handle = handle
+        self._size = size
+        self._offset = 0
+        self._closed = False
+
+    # -- 位置 -------------------------------------------------------------
+
+    def tell(self) -> int:
+        return self._offset
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        if whence == 0:
+            target = offset
+        elif whence == 1:
+            target = self._offset + offset
+        elif whence == 2:
+            if self._size is None:
+                raise ProtocolError("无法从文件末尾定位：打开时没有给出文件大小。")
+            target = self._size + offset
+        else:
+            raise ValueError(f"不支持的 whence：{whence}")
+        if target < 0:
+            raise ValueError("定位到了文件开头之前。")
+        self._offset = target
+        return target
+
+    def seekable(self) -> bool:
+        return True
+
+    def readable(self) -> bool:
+        return True
+
+    def writable(self) -> bool:
+        return False
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    @property
+    def name(self) -> str:
+        return "remote-reader"
+
+    # -- 读取 -------------------------------------------------------------
+
+    def read(self, count: int = -1) -> bytes:
+        """读 `count` 字节；`count` 为负表示读到文件结尾。"""
+        if count is None or count < 0:
+            return self.read_to_end()
+        if count == 0:
+            return b""
+        chunks: list[bytes] = []
+        remaining = count
+        while remaining > 0:
+            chunk = self._client.read_chunk(
+                self._handle, self._offset, min(remaining, DEFAULT_CHUNK_SIZE)
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            self._offset += len(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def read_to_end(self) -> bytes:
+        chunks: list[bytes] = []
+        while True:
+            chunk = self._client.read_chunk(self._handle, self._offset, DEFAULT_CHUNK_SIZE)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            self._offset += len(chunk)
+        return b"".join(chunks)
+
+    def readinto(self, buffer) -> int:
+        data = self.read(len(buffer))
+        buffer[: len(data)] = data
+        return len(data)
+
+    def flush(self) -> None:
+        return None
+
+    def close(self) -> None:
+        """只标记自身。真正的句柄归 `open_read` 的上下文管理器所有。"""
+        self._closed = True
+
+    def __enter__(self) -> "RandomReader":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        self.close()
+        return False

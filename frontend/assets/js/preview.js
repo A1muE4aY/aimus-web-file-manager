@@ -12,7 +12,7 @@ import { openModal, closeModal } from "./modal.js";
 import { toast, toastError } from "./toast.js";
 import { activeConnection } from "./state.js";
 
-export async function openPreview(entry, onDownload) {
+export async function openPreview(entry, onDownload, onEdit) {
   const conn = activeConnection();
   if (!conn) return;
   let data;
@@ -57,6 +57,13 @@ export async function openPreview(entry, onDownload) {
       h("p", { class: "hint", text: "这个文件不是 UTF-8 文本，按 " + data.encoding + " 显示。" })
     );
   }
+  // 预览是只读的：这里说得直白一点，别让用户以为改完就保存了。
+  body.appendChild(
+    h("p", {
+      class: "hint",
+      text: "这里是只读预览，不会改动远端文件；要修改请点下面的「编辑」。",
+    })
+  );
   body.appendChild(h("pre", { class: "preview-text", text: data.text }));
 
   const download = h("button", {
@@ -77,10 +84,27 @@ export async function openPreview(entry, onDownload) {
     },
   });
 
+  const buttons = [];
+  if (entry.type === "file" && onEdit) {
+    buttons.push(
+      h("button", {
+        type: "button",
+        class: "btn",
+        id: "btn-preview-edit",
+        text: "编辑",
+        onClick: function () {
+          closeModal("edit");
+          onEdit(entry);
+        },
+      })
+    );
+  }
+  buttons.push(download, close);
+
   openModal({
     title: "预览 " + entry.name,
     body: body,
-    buttons: [download, close],
+    buttons: buttons,
     wide: true,
   });
 }

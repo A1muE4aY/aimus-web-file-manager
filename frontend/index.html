@@ -70,6 +70,7 @@
               <input type="checkbox" id="chk-allow-write">
               <span>允许写操作</span>
             </label>
+            <button type="button" class="btn" id="btn-edit" disabled>编辑</button>
             <button type="button" class="btn" id="btn-preview" disabled>预览</button>
             <button type="button" class="btn" id="btn-download" disabled>下载</button>
             <button type="button" class="btn" id="btn-upload" disabled>上传</button>
@@ -128,6 +129,7 @@
                 <th class="col-type" data-sort="type" scope="col">类型</th>
                 <th class="col-perm" scope="col">权限</th>
                 <th class="col-time" data-sort="mtime" scope="col">修改时间</th>
+                <th class="col-action" scope="col">操作</th>
               </tr>
             </thead>
             <tbody id="file-body"></tbody>
