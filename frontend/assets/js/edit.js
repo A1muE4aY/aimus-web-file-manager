@@ -171,6 +171,12 @@ function showEditor(conn, entry, file, limits) {
     body: body,
     buttons: [foot],
     wide: true,
+    // Esc、点空白处、右上角 × 与「取消」按钮一样要检查未保存的修改：真实 CU 里
+    // 在对话框外面点了一下，刚写的几行就被悄悄丢掉了，前后不一致。
+    onRequestClose: function () {
+      cancelNow();
+      return false;
+    },
   });
 
   const writable = allowWrite(conn.id);

@@ -8,10 +8,10 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 
 | | |
 |---|---|
-| 当前版本 | `v0.1.0`（规划文档 §6.1 的六个阶段全部完成） |
+| 当前版本 | `v0.1.1`（在 v0.1.0 基础上完成缺陷修复、侧边栏优化、远端文件检索、在线编辑与文件操作、在线虚拟机自动发现） |
 | 运行时依赖 | **0 个第三方 Python 包**（系统 OpenSSH 客户端视为环境前提） |
-| 测试状态 | 单元 304 / 集成 18 / 安全 38 / 端到端 3，合计 **363 项全部通过**（见 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)） |
-| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.0-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
+| 测试状态 | 单元 505 / 集成 108 / 安全 82 / 端到端 22，合计 **717 项全部通过**（见 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)） |
+| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.1-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
 
 ---
 
@@ -33,7 +33,11 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 | P1 | 大文件下载进度与传输取消 | 部分实现：上传有进度与取消；下载由浏览器下载栏承载 |
 | P1 | 多虚拟机配置管理 | 已实现 |
 | P2 | 权限与属主展示 | 已实现（改用原生 SFTP v3 后信息不再丢失） |
-| P2 | 创建目录 / 重命名 / 删除 | **未开放**：连接层已实现并实测通过，但未注册进 HTTP 端点 |
+| P1 | 远端文件检索（按文件名与内容、范围与深度可控、可中止） | 已实现（v0.1.1） |
+| P1 | 文本文件在线编辑（编码探测、大小上限、保存冲突检测） | 已实现（v0.1.1） |
+| P1 | 重命名 / 压缩成 `.tar.gz` / 解压 / 删除 | 已实现（v0.1.1） |
+| P2 | 在线虚拟机发现（只读 VMware 状态，产出候选连接） | 已实现（v0.1.1，仅 VMware Workstation） |
+| P2 | 创建目录 | **未开放**：连接层已实现，未注册进 HTTP 端点 |
 
 功能分级与非功能门槛的完整定义见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
 
@@ -69,9 +73,9 @@ python app\main.py --init-config
 | [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | 功能/非功能需求、优先级、验收条件 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、模块划分、数据流、设计取舍 |
 | [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | 目录用途、命名规范、文件归属 |
-| [docs/API.md](docs/API.md) | HTTP API 定义、参数、响应、错误码（19 个端点） |
+| [docs/API.md](docs/API.md) | HTTP API 定义、参数、响应、错误码（32 个端点） |
 | [docs/SECURITY.md](docs/SECURITY.md) | 威胁模型、认证、密钥保护、路径校验、残余风险 |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 技术选型、替代方案、决策理由（D-001 ~ D-017） |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 技术选型、替代方案、决策理由（D-001 ~ D-018） |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发环境、调试方法、代码规范 |
 | [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 测试范围、分层、环境、用例设计原则、验收门槛 |
 | [docs/TEST_REPORT.md](docs/TEST_REPORT.md) | **实际**测试执行记录、验收项结论与证据 |
@@ -130,7 +134,7 @@ aimus-web-file-manager/
 ## 已知限制
 
 - 只管理 **Linux** 目标机（POSIX 路径语义）；Windows 目标机的路径方言只在设计上预留。
-- HTTP 层只开放**上传**这一种写操作；创建目录、重命名、删除属 P2，已在连接层实现但未暴露。
+- HTTP 层开放的写操作有：**上传、在线编辑保存、重命名、压缩、解压、删除**；创建目录属 P2，已在连接层实现但未暴露。
 - **覆盖上传中断会在目标路径留下被截断的文件**（SFTP v3 的 `RENAME` 不能替换已存在目标），
   这是本版明确接受的取舍；新建上传走「临时名 + 改名」，不会留下半成品。
 - 未在**真实 CentOS 虚拟机**上验证（集成与端到端跑在 WSL 测试床上）；未做系统级断网验证。

@@ -1077,7 +1077,24 @@ td.col-dir {
 .discovery-table thead th { cursor: default; position: sticky; top: 0; background: var(--surface); }
 .discovery-table tbody tr { cursor: default; }
 .discovery-table .col-ip { font-family: var(--mono); font-size: 12px; }
-.discovery-table .col-action { width: 92px; text-align: right; }
+.discovery-table .col-action { text-align: right; }
+
+/* 结果表必须用固定布局。自动布局下「名称 / 地址 / 能不能连」三列的最小宽度之和就有
+   940px（真实数据实测），超过容器的 844px，于是「操作」列被整个挤出可视区 —— 真实
+   CU 里「创建连接」按钮落在模态外面，不横向滚动根本看不到，点也点不到。固定布局让每列
+   按比例分宽度，长文本自己换行，横向滚动条也随之消失。 */
+.discovery-table { table-layout: fixed; width: 100%; }
+.discovery-table .col-name { width: 25%; }
+.discovery-table .col-state { width: 11%; }
+.discovery-table .col-ip { width: 21%; }
+.discovery-table .col-answer { width: 27%; }
+.discovery-table .col-action { width: 16%; }
+
+/* 「其它地址」两张表是四列（地址 / 来源 / 结论 / 操作），比例与虚拟机表不同。 */
+#discovery-online .col-ip, #discovery-ssh .col-ip { width: 24%; }
+#discovery-online .col-source, #discovery-ssh .col-source { width: 16%; }
+#discovery-online .col-answer, #discovery-ssh .col-answer { width: 42%; }
+#discovery-online .col-action, #discovery-ssh .col-action { width: 18%; }
 
 .discovery-name { font-size: 13px; font-family: var(--mono); }
 .discovery-ip { font-family: var(--mono); font-size: 12px; }

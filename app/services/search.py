@@ -503,16 +503,22 @@ class SearchRegistry:
                 self._active.pop(search.connection_id, None)
 
     def _prune_locked(self) -> None:
-        """只保留最近若干次**已结束**的搜索；正在跑的一个都不动。"""
-        finished = [
-            (s.finished_at or s.started_at, sid)
-            for sid, s in self._searches.items()
-            if not s.is_running
-        ]
+        """只保留最近若干次**已结束**的搜索；正在跑的一个都不动。
+
+        排序键里第二个元素是 `_searches` 的**插入次序**（dict 天然保序），不能省：
+        `finished_at` 是 `time.time()`，本机实测它的粒度粗到连续 50 次调用取回同一个
+        值（49 个差值为 0），于是「按结束时间排」会退化成「按随机的 search.id 排」——
+        「淘汰最旧的一次」就变成了「淘汰任意一次」。
+        """
         if len(self._searches) < self._max_kept:
             return
+        finished = [
+            (s.finished_at or s.started_at, order, sid)
+            for order, (sid, s) in enumerate(self._searches.items())
+            if not s.is_running
+        ]
         finished.sort()
-        for _, sid in finished[: max(0, len(self._searches) - self._max_kept + 1)]:
+        for _, _, sid in finished[: max(0, len(self._searches) - self._max_kept + 1)]:
             self._searches.pop(sid, None)
 
 

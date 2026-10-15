@@ -443,10 +443,16 @@ class RegistryTests(unittest.TestCase):
             search = registry.start(session(FakeClient(tree)), path="/root", query="report")
             search.wait(5)
             ids.append(search.id)
-        self.assertGreaterEqual(len(registry._searches), 1)
-        self.assertLessEqual(len(registry._searches), 6)
-        with self.assertRaises(PathNotFound):
-            registry.get(ids[0])
+        # 保留的必须是**最近 3 次**。原先只断言「1 <= 保留数 <= 6」，淘汰哪一条都算
+        # 通过；而本机 time.time() 的粒度粗到连续调用取回同一个值，按结束时间排序会
+        # 退化成按随机的 search.id 排序，「淘汰最旧」于是变成「淘汰任意」——只有把
+        # 「哪几条还在、哪几条没了」钉死，这条用例才真的拦得住回归。
+        self.assertEqual(len(registry._searches), 3)
+        for stale in ids[:3]:
+            with self.assertRaises(PathNotFound):
+                registry.get(stale)
+        for kept in ids[3:]:
+            self.assertEqual(registry.get(kept).id, kept)
 
 
 class QueryValidationTests(unittest.TestCase):

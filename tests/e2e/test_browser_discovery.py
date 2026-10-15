@@ -66,6 +66,12 @@ VM_ROWS = (
     "   buttonText: button ? button.textContent : '' }; })"
 )
 
+#: 结果表为空时给出的那句话（扫描途中、被中止、真的没有，三种说法不同）。
+EMPTY_TEXT = (
+    "(function () { var e = document.getElementById('discovery-vms-empty');"
+    " return e.hidden ? '' : e.textContent; })()"
+)
+
 #: 点第一行有「创建连接」的按钮，并把它的 data-ip 带回来（返回值经 CDP 回到 Python）。
 CLICK_FIRST_CREATE = (
     "(function () {"
@@ -298,6 +304,9 @@ class BrowserDiscoveryTests(unittest.TestCase):
             self.open_panel(page)
             self.start_scan(page)
             self.assertFalse(self.cancel_hidden(page), "扫描在跑，却没有给出中止按钮")
+            # 扫描还没结束，「0 台」只是还没读到，不能写成「没找到」。
+            running_empty = page.evaluate(EMPTY_TEXT)
+            self.assertIn("正在读取", running_empty, "扫描途中就把空态写成了结论：" + running_empty)
             page.evaluate("document.getElementById('btn-discovery-cancel').click()")
 
             state = self.wait_terminal(page, timeout=120)

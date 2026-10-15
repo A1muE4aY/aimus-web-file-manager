@@ -1,4 +1,4 @@
-# AWFM 发行说明（v0.1.0）
+# AWFM 发行说明（v0.1.1）
 
 > 本文对应规划文档 §11「发行方式」与发行验收清单（§11 八项）。**只写实际做到的事**，
 > 做不到的写在 §9，不以「已支持」表述。
@@ -7,9 +7,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 版本 | `0.1.0`（`app/__init__.py`） |
-| 发行日期 | 2026-10-15 |
-| 产物形态 | **开发版**（本仓库：源码 + 测试 + 配置模板 + 完整文档）与 **便携版**（`dist/AWFM-0.1.0-windows-x64.zip`） |
+| 版本 | `0.1.1`（`app/__init__.py:7`） |
+| 发行日期 | 2026-10-16 |
+| 产物形态 | **开发版**（本仓库：源码 + 测试 + 配置模板 + 完整文档）与 **便携版**（`dist/AWFM-0.1.1-windows-x64.zip`；v0.1.0 的 `dist/AWFM-0.1.0-windows-x64.zip` 仍保留，未覆盖） |
 | 平台 | Windows x64（宿主机）；目标机要求 Linux 且启用 SFTP 子系统 |
 | 许可 | MIT，见 `LICENSE` |
 | 运行时依赖 | **0 个第三方 Python 包**；需要系统 `ssh`（OpenSSH 客户端） |
@@ -20,7 +20,7 @@
 解压后的目录结构：
 
 ```
-AWFM-0.1.0-windows-x64/
+AWFM-0.1.1-windows-x64/
 ├── start.cmd            启动（自动找 py -3 / python，设置 UTF-8，再调 scripts/start.py）
 ├── stop.cmd             停止（参数为端口，默认 8760；先确认 PID 是 python 进程再终止）
 ├── VERSION              版本、构建时间、平台、构建主机 Python 版本、源仓库说明
@@ -56,21 +56,21 @@ python scripts\package.py
 → 以**固定时间戳**（1980-01-01）压缩成 zip（所以同样的输入能产出同样的字节）→ 用 `testzip()` 校验 CRC
 → 逐个文件比对其 SHA-256 与清单一致 → 检查有无清单外的成员。
 
-压缩包内共 **82 个文件**：清单 `MANIFEST.json` 的 `file_count` 是 **81**（清单不登记自身），加上 `MANIFEST.json` 自身正好 82；zip 成员数同为 82。
-所有成员名统一带一层 `AWFM-0.1.0-windows-x64/` 前缀——解压时不会把 `app/`、`frontend/`、`docs/` 散落到当前目录，目录结构与本文第 2 节的树完全一致。
+压缩包内共 **95 个文件**：清单 `MANIFEST.json` 的 `file_count` 是 **94**（清单不登记自身），加上 `MANIFEST.json` 自身正好 95；zip 成员数同为 95。
+所有成员名统一带一层 `AWFM-0.1.1-windows-x64/` 前缀——解压时不会把 `app/`、`frontend/`、`docs/` 散落到当前目录，目录结构与本文第 2 节的树完全一致。
 
 ## 4. 校验和
 
 `dist/SHA256SUMS.txt`（**不在包内**）记录本次构建的：
 
-- 便携包 `AWFM-0.1.0-windows-x64.zip` 的 SHA-256；
+- 便携包 `AWFM-0.1.1-windows-x64.zip` 的 SHA-256；
 - 清单 `MANIFEST.json` 的 SHA-256；
 - 两种校验方式：`certutil -hashfile <文件> SHA256` 或 `Get-FileHash -Algorithm SHA256`。
 
 包内 `MANIFEST.json` 另有**每个文件**的 SHA-256，可用于校验解压后的内容是否被改动。
 
 ```powershell
-certutil -hashfile dist\AWFM-0.1.0-windows-x64.zip SHA256
+certutil -hashfile dist\AWFM-0.1.1-windows-x64.zip SHA256
 ```
 
 > **为什么不把包自身的哈希写进包内文档**：`docs/` 是便携包的一部分，把哈希写进 `docs/RELEASE.md`
@@ -108,7 +108,7 @@ python scripts\test.py              # 四层测试
 
 `VERSION`（包内）记录：版本号、构建时间、平台标签、构建主机 Python 版本、源仓库名称，
 以及「本包为便携版、无需在线安装依赖」的说明。`MANIFEST.json` 记录生成时间与文件清单。
-纯源码仓库的版本号唯一来源是 `app/__init__.py:7`（`0.1.0`），并由 `scripts/build.py` 第 7 项
+纯源码仓库的版本号唯一来源是 `app/__init__.py:7`（`0.1.1`），并由 `scripts/build.py` 第 7 项
 校验它同时出现在 `README.md` 与 `docs/CHANGELOG.md` 中。
 
 ## 7. 系统要求
@@ -124,7 +124,7 @@ python scripts\test.py              # 四层测试
 |---|---|---|---|
 | 1 | 干净环境成功启动 | 通过 | 解压到临时目录后 `start.cmd --port 8899` → `/api/health` 200；`docs/TEST_REPORT.md` §3.3 |
 | 2 | 界面不依赖外部 CDN 或在线字体 | 通过 | `scripts/build.py` 第 4 项 + `tests/security` 的 `OfflineFrontendTests`；端到端断言对外请求为空 |
-| 3 | 正确连接指定虚拟机并浏览文件 | **降级通过** | 连接与浏览在 WSL Ubuntu 24.04.2 测试床上端到端验证；**规划文档指定的 CentOS 虚拟机未验证** |
+| 3 | 正确连接指定虚拟机并浏览文件 | 通过 | v0.1.1 阶段六真实桌面 CU 用**真机 CentOS Stream 10**（`192.168.170.128`）验证连接、指纹确认、浏览、检索、编辑与哈希核对（`docs/reports/PHASE-06-CU-ACCEPTANCE.md`）；v0.1.0 时此项在 WSL 测试床上验证 |
 | 4 | 主机密钥异常与认证失败处理正确 | 通过 | `tests/security/test_host_key.py`（未知/伪造/变化三种）；端到端第 2、3 条 |
 | 5 | 配置/日志/临时文件位置明确 | 通过 | 本文 §5 的表；启动自检打印位置（`app/main.py:207`） |
 | 6 | 无互联网条件下完成核心测试 | **降级通过** | 静态扫描零外部 URL、零第三方依赖、端到端对外请求为空；**未做系统级断网空载** |
@@ -133,9 +133,9 @@ python scripts\test.py              # 四层测试
 
 ## 9. 已知限制与不适用场景
 
-- **未在真实 CentOS 虚拟机上验证**（第 3 项）；**未做系统级断网验证**（第 6 项）。
+- **未做系统级断网验证**（第 6 项）：只做了静态扫描、零依赖与端到端「对外请求为空」的间接验证。（第 3 项已在 v0.1.1 阶段六用真机 CentOS Stream 10 补上。）
 - 只管理 **Linux** 目标机；只开放**上传**这一种写操作；覆盖上传中断会留下被截断的文件。
-- 端到端只覆盖 3 条主路径（连接浏览、主机指纹确认、密码失败提示）。
+- 端到端（无头 Edge）覆盖 24 条用例，含连接浏览、主机指纹确认、密码失败提示、检索、在线编辑与文件操作、写权限热同步、侧边栏、发现与回归修复；**真实桌面 CU 只覆盖任务书 §七列举的九项场景**，其余场景仍依赖自动化测试。
 - 便携包**不含测试**；用户侧如需复现测试结论，请使用开发版（本仓库）并跑 `python scripts\test.py`。
 
 ## 10. 回滚与支持

@@ -156,6 +156,9 @@ async function toggleWrite(event) {
     toastError(error);
   }
   updateToolbar();
+  // 「操作」列的按钮（重命名 / 压缩 / 删除）也要跟着变灰或恢复：工具栏走 updateToolbar，
+  // 行内按钮只在列表重渲染时更新，不补这一句就要等下一次刷新才生效。
+  files.render();
 }
 
 function showHelp() {

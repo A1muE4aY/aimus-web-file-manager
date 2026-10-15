@@ -22,6 +22,7 @@ export function isModalOpen() {
  * @param {Node[]} options.buttons   底部按钮
  * @param {boolean} options.wide     宽版（大段文本预览用）
  * @param {Function} options.onClose 关闭回调
+ * @param {Function} options.onRequestClose 关闭前检查（Esc / 点空白处 / 右上角 ×）
  */
 export function openModal(options) {
   const opts = options || {};
@@ -40,12 +41,37 @@ export function openModal(options) {
   modal.classList.toggle("wide", Boolean(opts.wide));
 
   root.hidden = false;
-  state = { onClose: opts.onClose || null };
+  state = { onClose: opts.onClose || null, onRequestClose: opts.onRequestClose || null };
 
   // 焦点给第一个可输入元素；没有就落到关闭按钮，保证 Esc 之外还有出路。
   const first = body.querySelector("input:not([type=hidden]), select, textarea") || body.querySelector("button");
   (first || $("#modal-close")).focus();
   return { close: closeModal };
+}
+
+/**
+ * 请求关闭：Esc、点空白处、右上角 × 都走这里。
+ *
+ * 有 `onRequestClose` 的对话框可以**否决**这次关闭（返回 false）—— 例如编辑器里
+ * 有没保存的修改时，先弹出「有未保存的修改，确定放弃吗？」让用户确认。按钮自己调
+ * `closeModal` 的路径不受影响：那些按钮已经各自做过检查。
+ *
+ * 检查函数自己抛错时按「不许关」处理：宁可多问一句，也不能把用户刚写的内容悄悄丢掉。
+ */
+function requestClose(reason) {
+  if (!state) return;
+  const guard = state.onRequestClose;
+  if (guard) {
+    let allowed = false;
+    try {
+      allowed = guard(reason) !== false;
+    } catch (error) {
+      console.error("模态关闭前检查出错：", error);
+      allowed = false;
+    }
+    if (!allowed) return;
+  }
+  closeModal(reason);
 }
 
 export function closeModal(reason) {
@@ -93,7 +119,7 @@ document.addEventListener("keydown", function (event) {
   if (!state) return;
   if (event.key === "Escape") {
     event.preventDefault();
-    closeModal("escape");
+    requestClose("escape");
     return;
   }
   trapFocus(event);
@@ -101,10 +127,10 @@ document.addEventListener("keydown", function (event) {
 
 document.addEventListener("DOMContentLoaded", function () {
   $("#modal-backdrop").addEventListener("click", function () {
-    closeModal("backdrop");
+    requestClose("backdrop");
   });
   $("#modal-close").addEventListener("click", function () {
-    closeModal("close");
+    requestClose("close");
   });
 });
 

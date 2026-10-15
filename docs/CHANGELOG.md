@@ -13,14 +13,15 @@
 - **版本标识**：`v0.1.0` 是首个版本。六个阶段已全部完成，**已产出便携发行包与 SHA-256 校验和**
   （`dist/SHA256SUMS.txt`，说明见 `docs/RELEASE.md`），但**尚未打 git 标签**、未对外发布。
   打标签后需在此补上标签名与包哈希。
-  `v0.1.1` 正在开发中（阶段一~五已完成，见下节），**尚未打包、尚未打标签**。
+  `v0.1.1` 已开发完毕（阶段一~六，见下节），并已重新构建便携发行包与 SHA-256 校验和
+  （`dist/SHA256SUMS.txt`），**尚未打 git 标签**、未对外发布。
 - **日期**：ISO `YYYY-MM-DD`。
 - **维护方式**：**人工维护**，不自动生成。变更发生时同步写，而不是发版前一次性补记。
 
-## [v0.1.1] — 开发中（未发布）
+## [v0.1.1] — 2026-10-16（未打标签）
 
-- **版本号**：仍是 `0.1.0`（`app/__init__.py:7`）。阶段六交付时统一改为 `0.1.1` 并重新打包，本轮不提前改号。
-- **状态**：阶段一（修复已有缺陷）、阶段二（优化侧边栏）、阶段三（远端文件检索）、阶段四（远端文本编辑与文件操作）、阶段五（在线虚拟机自动发现）已落地并通过测试；阶段六**未开始**。
+- **版本号**：`0.1.1`（`app/__init__.py:7`，阶段六统一改号并重新打包）。
+- **状态**：六个阶段全部完成，四层自动化测试全绿（合计 719 项），并完成了任务书 §七要求的九项**真实桌面 CU 验收**（Edge InPrivate + 真实 CentOS Stream 10 虚拟机）：证据与结论见 `docs/reports/PHASE-06-CU-ACCEPTANCE.md`，回归与打包见 `docs/reports/PHASE-06-REGRESSION.md`。CU 期间发现的四处前端缺陷，以及全量回归暴露的一处服务端缺陷，都已修复并补齐回归用例（见「修复」）。
 - **起始日期**：2026-10-16。
 - **依据**：工作区根目录的任务书 `2.md`（用户提供的第二轮验收要求）。
 - **提交纪律**：阶段一~三的改动共用 `app/api/handlers.py`、`app/core/errors.py` 与前端若干文件，无法拆成互不依赖的提交，因此**合并为一次提交** `6e619f0`（2026-10-16，「阶段 01~03（v0.1.1）：缺陷修复、侧边栏优化、远端文件检索」，43 个文件 / +4768 −60，提交信息里逐阶段列明）；阶段四起每阶段单独提交——阶段四是独立提交 `b2bfc1f`（2026-10-16，「阶段 04（v0.1.1）：远端文本文件编辑与文件操作」，35 个文件 / +6182 −112），随后补了一次收尾提交 `4d69390`；阶段五同样是独立提交 `7a31fe2`（2026-10-16，「阶段 05（v0.1.1）：在线虚拟机自动发现」，32 个文件 / +4901 −64）。
@@ -35,7 +36,7 @@
 | 三 | 添加远端文件检索 | 已完成 | `app/services/search.py`、`app/api/handlers.py:161`（三个检索端点）、`frontend/assets/js/search.js`、`frontend/index.html:80`/`:88`；测试 unit 36 项 / integration 15 项 / security 18 项 / e2e 4 项；接口文档 `docs/API.md` §5.20–5.22；手册第 9 章（阶段四插入新第 8 章后顺延，原第 8 章）；阶段报告 `docs/reports/PHASE-03-SEARCH.md` |
 | 四 | 远端文本编辑与文件操作 | 已完成 | `app/services/editor.py`、`app/services/fileops.py`、6 个新端点（编号第 23~28，`app/api/handlers.py:434-463`）、配置键 `security.max_edit_bytes`、`EditConflict`（`app/core/errors.py:210`）；前端 `frontend/assets/js/edit.js`/`fileops.js` 与文件列表「操作」列；测试 unit 103 项（本阶段新增：`tests/unit/test_editor.py` 43 + `tests/unit/test_fileops.py` 60，配套内存版 SFTP 假件 `tests/unit/fake_sftp.py`）/ integration 61 项 / security 12 项 / e2e 5 项；四层合计 636 项 0 失败 0 跳过；接口文档 `docs/API.md` §5.23–5.28；手册第 8 章；阶段报告 `docs/reports/PHASE-04-EDIT.md` |
 | 五 | 自动发现在线虚拟机 | 已完成 | `app/services/discovery.py`、4 个发现端点（编号第 29~32，`app/api/handlers.py:472-506`）、配置段 `discovery`（9 个键）、`DiscoveryBusy`（`app/core/errors.py:225`）；前端 `frontend/assets/js/discovery.js` 与侧栏「扫描」入口；测试 unit 49 项 / integration 10 项 / security 11 项 / e2e 4 项（本阶段新增 74 项），四层合计 717 项 0 失败 0 跳过；接口文档 `docs/API.md` §5.29–5.32 与 §7.4；手册 §4.4 与 §10.2 的 discovery 段；阶段报告 `docs/reports/PHASE-05-DISCOVERY.md` |
-| 六 | 回归、CU 验收与交付 | 未开始 | — |
+| 六 | 回归、CU 验收与交付 | 已完成 | 版本号 `0.1.1`、`README.md` 与 `docs/USER_GUIDE.md` 更新、四处 CU 前端缺陷与一处检索剪枝缺陷的修复、`tests/e2e/test_browser_edit.py` 新增 2 条 CU 缺陷回归；四层合计 719 项 0 失败 0 跳过；CU 验收报告 `docs/reports/PHASE-06-CU-ACCEPTANCE.md`（九项逐条证据，截图 `.temp/cu-v011/01~61`）、阶段报告 `docs/reports/PHASE-06-REGRESSION.md`、便携发行包 `dist/AWFM-0.1.1-windows-x64.zip` 与 `dist/SHA256SUMS.txt` |
 
 ### 新增
 
@@ -78,6 +79,9 @@
 - 扫描结束（含用户中止）时把 `stage` 明确收成 `done`，避免「阶段」这一列在扫描结束后停在上一个动作上像是卡住了；失败时保留当时那一步，好看出卡在哪里（`app/services/discovery.py` 的 `Discovery._run`）。
 - `config/config.example.json` 删掉了 `$schema` 一行，使模板与 `DEFAULTS` 逐字段相等（原因见「修复」第一条）。
 
+- 版本号更新到 `0.1.1`：`app/__init__.py:7`、`README.md` 与 `app/api/http_server.py` 里注释的版本号（阶段六）。
+- `docs/USER_GUIDE.md` §8.4 改写：关闭编辑对话框的「取消」/ Esc / 点对话框外面 / 右上角 × 四条路径走同一套脏检查，都不会悄悄丢掉未保存的内容（阶段六 CU 发现并修复；`docs/USER_GUIDE.md:460`）。
+
 ### 修复
 
 - **缺陷①写权限状态不同步**：界面打开「允许写操作」后立刻上传仍被拒，必须断开重连。修复后写操作每次都以当前配置为准（`tests/security/test_write_permission_paths.py` 反向验证：撤权后旧会话引用写不进去，远端不落一个字节，连 `<名字>.awfm-part-*` 都不出现）。
@@ -93,6 +97,12 @@
 - **用户自定义的 `security.max_edit_bytes` 会被静默丢掉**（阶段五补 `discovery` 段时发现，属真实缺陷）：`AppConfig.to_dict()` 的 `security` 段漏了这个键，而连接管理每次增删改连接都会 `save_config()`，于是用户把它调大之后，只要在界面上动一次连接，设置就被写回默认的 2 MiB。修复为在 `to_dict()` 里补上（`app/core/config.py`），并加了一条 `parse_config(to_dict())` 的往返用例（自定义值 123456 与 `discovery.max_probes=64` 都不丢）。
 - **本机虚拟网卡与网关地址既是候选又永远不会被探测**（阶段五读代码时发现，属真实缺陷）：`app/services/discovery.py` 的 `targets` 已经排除了它们，但「其它地址」列表没有排除，于是 `192.168.170.1`/`.2` 这类地址会出现在结果里永远标着「未探测」；而那句解释「本机虚拟网卡与网关地址不做探测。」写在 `if host_addresses & set(targets)` 里——这个条件恒为假，**是一句永远不会出现的死代码**。修复为在「其它地址」循环里就跳过并单独计数，让说明真的会出现在 `notes` 里（「邻居表里有 N 条是本机虚拟网卡或网关的地址，已跳过（它们不是待连接的机器）。」；本机实测 N=1，与既有的「过滤 172 条」相加仍是 173，没有重复计数）。
 
+- **对话框外面点一下 / 按 Esc 会静默丢掉未保存的修改**（阶段六真实桌面 CU 验收时误点对话框外面，真实丢过一次内容，属真实缺陷）：`frontend/assets/js/modal.js` 原先只有「取消」按钮走脏检查，Esc 与 `#modal-backdrop` 的点击直接关闭对话框。修复后 `openModal` 支持 `onRequestClose`（检查函数抛错时按「不许关」处理），Esc / 点对话框外面 / 右上角 × /「取消」四条路径统一先问「有未保存的修改，确定放弃吗？」；`frontend/assets/js/edit.js` 传入该回调。回归用例 `tests/e2e/test_browser_edit.py` 的 `test_backdrop_and_escape_ask_before_discarding`（旧实现下会失败）。
+- **关掉写权限后行内按钮不立刻置灰**（阶段六 CU 验收时发现）：工具栏「上传」立即变灰，但列表行里的「重命名 / 压缩 / 删除」要等列表重渲染才更新，中间存在「按钮看着能点、点下去被拒」的窗口期。修复为 `frontend/assets/js/app.js` 的 `toggleWrite()` 在 `updateToolbar()` 之后补一次 `files.render()`；回归用例 `test_write_buttons_follow_a_live_write_toggle`。
+- **检索记录的淘汰顺序在本机时钟上退化成随机**（阶段六全量回归偶发失败时定位，属真实缺陷）：`app/services/search.py` 的 `SearchRegistry._prune_locked()` 原先按 `(finished_at, sid)` 排序淘汰旧记录，而本机 `time.time()` 的粒度粗到连续 50 次调用取回同一个值（实测 49 个差值为 0），主键全部相等时排序退化成按随机的搜索 id 进行——「淘汰最旧的一次」变成「淘汰任意一次」。修复为把 `_searches` 的插入次序作为排序键的第二位兜底；探针 `.temp/probe_prune_order.py` 在旧实现上 40 轮错 26 轮（21 轮淘汰了较新的一条、5 轮最旧的一条没被淘汰），修复后 0/40。同时把 `tests/unit/test_search.py` 的用例由「1 ≤ 保留数 ≤ 6」加强为「恰好保留最近 3 次，`ids[0..2]` 一定查不到」。
+- **发现结果表里的「创建连接」按钮被挤出可视区**（阶段六 CU 验收第⑥项发现）：结果表原先靠自动布局，名称 / 地址 / 能不能连三列的最小宽度之和（940 px）超过面板可用宽度（844 px），把含每行「创建连接」按钮的「操作」列整个推出可视范围，鼠标点不到。修复为固定布局 + 列宽百分比（`frontend/assets/css/app.css` 的 `.discovery-table` 与 `.col-name`/`.col-state`/`.col-ip`/`.col-answer`/`.col-action`，两张「其它地址」表另设列宽）。
+- **扫描途中结果区就写「没有从 VMware 的清单里找到虚拟机。」**（阶段六 CU 验收第⑥项发现）：进度药丸还写着「扫描中…」时，结果区已经在给结论。修复为三种「0 台」分开说：扫描中写「正在读取本机 VMware 的信息…」、被中止写「扫描已中止，没有拿到虚拟机列表。」、真正扫完且没有结果才写「没有从 VMware 的清单里找到虚拟机。」（`frontend/assets/js/discovery.js`；`tests/e2e/test_browser_discovery.py` 增加 EMPTY_TEXT 断言，扫描途中必须含「正在读取」）。
+
 ### 安全
 
 - 检索的路径与关键词校验与浏览同源（`app/utils/paths.py` 的 `validate_remote_path`）：非绝对路径、含 NUL、超过 4096 字节一律 400；`..` 交给服务端 `realpath` 解析后再判定，不做调用方折叠；`query` 上限 128 字符，除制表符外的控制字符拒绝（`tests/security/test_search_paths.py`）。
@@ -105,15 +115,15 @@
 
 ### 已知限制
 
-- 阶段六未开始：CU 验收与 v0.1.1 打包**尚未执行**（阶段五的在线虚拟机发现已落地，见上）。
+- 真实桌面 CU 验收只覆盖任务书 §七列举的九项场景；虚拟机发现的「运行但 SSH 不可达」「扫描期间 IP 变化」「扫描失败」三种形态在真实环境里没有出现，仍只有模拟覆盖；非 VMware 平台、被动掉线（网络中断 / 目标机重启）、接近 2 MiB 上限的大文件编辑也未在真机上验证（详见 `docs/reports/PHASE-06-CU-ACCEPTANCE.md` §5）。
 - 文件操作**仍然没有**：新建目录、修改权限、复制 / 移动、打包下载、多选批量操作；压缩格式固定 `.tar.gz`（解压额外支持 `.tgz` / `.tar` / `.zip`）。
 - 在线编辑只支持 **UTF-8** 文本（含或不含 BOM），单文件上限 `security.max_edit_bytes`（默认 2 MiB）；不做编码转换，不提供十六进制视图或行尾转换开关。
 - 没有版本历史与撤销：删除、覆盖上传、保存都不可回退（远端回收站不在本项目范围内）；编辑器内容只在浏览器内存里，刷新页面即丢。
 - 检索上限与压缩 / 解压上限都是常量，暂不可配置；检索不跟随符号链接、不搜文件内容、不支持通配符与正则。
 - 覆盖上传中途取消仍会留下不完整的文件（SFTP v3 的 RENAME 不能替换已存在目标），在线编辑保存则走「临时名 + 改名 + 备份回滚」，不受此影响。
-- 版本号仍是 `0.1.0`，便携发行包与校验和仍是 v0.1.0 的那一份，未重新构建。
+- v0.1.1 的便携发行包与校验和见 `dist/SHA256SUMS.txt`；v0.1.0 的那一份仍保留在 `dist/AWFM-0.1.0-windows-x64.zip`，其原始验收证据（`.temp/cu/`）未被覆盖。
 - 在线虚拟机发现只认**本机装好的 VMware Workstation**（清单、`vmrun`、`vmnetdhcp.*`）：不认 VirtualBox、Hyper-V，也不认远程 ESXi。邻居表只有 Windows 读得到（其它平台该来源标 `unavailable`，地址只能来自租约与清单）；非管理员读不到 VMware 进程的命令行，运行状态由 `vmrun` 决定，`vmrun` 也读不到时虚拟机状态是「未知」而**不是**「已关机」。它只判断 22 端口通不通，不识别机器上跑了别的什么服务，也不区分「机器没开」与「防火墙拦了」。
-- 阶段六要求的真实桌面 CU 验收**尚未执行**：阶段一~五的证据来自单元 / 集成 / 安全 / 无头 Edge e2e 测试，都不等同于 CU 验收。
+- 阶段一~五的部分证据来自单元 / 集成 / 安全 / 无头 Edge e2e 测试，它们不等同于 CU 验收；阶段六已补上真实桌面 CU 验收，但 CU 的操作输入由桌面驱动投递（不是人手），因此不能覆盖人工鼠标键盘的手感类问题。
 
 ---
 

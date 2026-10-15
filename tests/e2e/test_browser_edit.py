@@ -500,5 +500,82 @@ class BrowserEditTests(unittest.TestCase):
             page.wait_for(MODAL_CLOSED)
 
 
+    def test_backdrop_and_escape_ask_before_discarding(self):
+        """点对话框外面、按 Esc，都要和「取消」按钮一样先问一句。
+
+        真实 CU 里踩到过：编辑器里有未保存的修改时，在对话框外面点了一下，内容就被
+        悄悄丢掉了 —— 而同一个「关闭」动作走「取消」按钮是会问的。同一次关闭不能有
+        两种后果，所以 Esc / 空白处 / 右上角 × 都收进 `onRequestClose`。
+        """
+        with browser_session() as page:
+            self.open_fixture_in_browser(page)
+            self.open_editor(page, CANCEL_FILE)
+            page.evaluate(set_editor_text_expr("改到一半\n"))
+            self.assertFalse(page.evaluate(EDITOR_SAVE_DISABLED))
+
+            # 点对话框外面（#modal-backdrop）：对话框要留着，并且弹出确认。
+            page.evaluate("document.getElementById('modal-backdrop').click()")
+            page.wait_for(
+                "!document.getElementById('editor-ask').hidden",
+                message="在对话框外面点了一下，没有先问一句就把内容丢了",
+            )
+            self.assertTrue(page.evaluate(MODAL_OPEN), "问都没问对话框就关了")
+            self.assertEqual(page.evaluate(EDITOR_TEXT_VALUE), "改到一半\n")
+
+            # 先选「继续编辑」：内容不动。
+            page.evaluate("document.getElementById('editor-ask-no').click()")
+            page.wait_for("document.getElementById('editor-ask').hidden === true")
+            self.assertTrue(page.evaluate(MODAL_OPEN))
+
+            # Esc 走同一条检查（派发到 document，和真实按键同一个监听器）。
+            page.evaluate(
+                "document.dispatchEvent(new KeyboardEvent('keydown',"
+                " {key: 'Escape', bubbles: true, cancelable: true}))"
+            )
+            page.wait_for(
+                "!document.getElementById('editor-ask').hidden", message="按 Esc 没有先问一句"
+            )
+            self.assertTrue(page.evaluate(MODAL_OPEN))
+
+            # 真的选了「放弃修改并关闭」才关掉；远端一个字节都不该动。
+            page.evaluate("document.getElementById('editor-ask-yes').click()")
+            page.wait_for(MODAL_CLOSED, timeout=60, message="放弃修改之后对话框没有关掉")
+            self.assertEqual(self.remote_text(CANCEL_FILE), KEPT_TEXT)
+
+            page.screenshot(ARTIFACTS_DIR / ("browser-edit-backdrop-" + RUN_TAG + ".png"))
+
+    def test_write_buttons_follow_a_live_write_toggle(self):
+        """开着写权限进目录，再把「允许写操作」关掉：行内按钮要当场变灰。
+
+        真实 CU 里发现过：关掉写权限后工具栏的「上传」立刻灰了，列表行里的重命名 /
+        压缩 / 删除却还是亮的，要等下一次刷新列表才跟上。工具栏与行内按钮必须同一拍。
+        """
+        with browser_session() as page:
+            self.open_fixture_in_browser(page)
+            write_classes = ("btn-rename-entry", "btn-compress-entry", "btn-delete-entry")
+            for classes in write_classes:
+                self.assertEqual(
+                    page.evaluate(row_button_state_expr(EDIT_FILE, classes)),
+                    "enabled",
+                    "开着写权限时 " + classes + " 应该是可点的",
+                )
+
+            # 关闭写权限不需要二次确认（开启才需要），点一下就走。
+            page.evaluate("document.getElementById('chk-allow-write').click()")
+            self.assertIn("已关闭写操作", self.wait_for_toast(page, "已关闭写操作"))
+            page.wait_for(
+                "document.getElementById('btn-upload').disabled === true",
+                message="关掉写权限之后工具栏的「上传」没有变灰",
+            )
+            for classes in write_classes:
+                page.wait_for(
+                    row_button_state_expr(EDIT_FILE, classes) + " === 'disabled'",
+                    timeout=30,
+                    message="关掉写权限之后行内的 " + classes + " 没有当场变灰",
+                )
+
+            page.screenshot(ARTIFACTS_DIR / ("browser-edit-live-writeoff-" + RUN_TAG + ".png"))
+
+
 if __name__ == "__main__":
     unittest.main()

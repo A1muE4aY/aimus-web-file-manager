@@ -187,9 +187,9 @@ function buildModal() {
             "tr",
             {},
             h("th", { class: "col-name", scope: "col", text: "名称" }),
-            h("th", { scope: "col", text: "状态" }),
-            h("th", { scope: "col", text: "地址" }),
-            h("th", { scope: "col", text: "能不能连" }),
+            h("th", { class: "col-state", scope: "col", text: "状态" }),
+            h("th", { class: "col-ip", scope: "col", text: "地址" }),
+            h("th", { class: "col-answer", scope: "col", text: "能不能连" }),
             h("th", { class: "col-action", scope: "col", text: "操作" })
           )
         ),
@@ -244,8 +244,8 @@ function otherSection(id, title, body) {
             "tr",
             {},
             h("th", { class: "col-ip", scope: "col", text: "地址" }),
-            h("th", { scope: "col", text: "来源" }),
-            h("th", { scope: "col", text: "结论" }),
+            h("th", { class: "col-source", scope: "col", text: "来源" }),
+            h("th", { class: "col-answer", scope: "col", text: "结论" }),
             h("th", { class: "col-action", scope: "col", text: "操作" })
           )
         ),
@@ -551,7 +551,12 @@ function renderVms() {
   const empty = nodes.vms.querySelector(".discovery-empty");
   empty.hidden = vms.length > 0;
   if (!vms.length) {
-    empty.textContent = "没有从 VMware 的清单里找到虚拟机。";
+    // 三种「0 台」要分开说：还在跑（台数天然是 0）、被中止（没读完）、真的没有。
+    // 真实 CU 里正是在扫描途中就写了「没有从 VMware 的清单里找到虚拟机。」—— 药丸还写着
+    // 「扫描中…」，等于替用户下了结论。
+    if (scan.running) empty.textContent = "正在读取本机 VMware 的信息…";
+    else if (scan.status === "cancelled" || scan.interrupted) empty.textContent = "扫描已中止，没有拿到虚拟机列表。";
+    else empty.textContent = "没有从 VMware 的清单里找到虚拟机。";
     return;
   }
   for (const vm of vms) body.appendChild(vmRow(vm));
