@@ -22,6 +22,7 @@ class ErrorCodeTests(unittest.TestCase):
         "PermissionDenied": ("permission_denied", 403),
         "SearchBusy": ("search_busy", 409),
         "EditConflict": ("edit_conflict", 409),
+        "DiscoveryBusy": ("discovery_busy", 409),
         "RemoteError": ("remote_error", 502),
         "ProtocolError": ("protocol_error", 502),
         "OperationTimeout": ("timeout", 504),

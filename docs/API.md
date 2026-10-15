@@ -1,8 +1,8 @@
 # AWFM HTTP API 参考
 
-> 本文是 AWFM 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 28 个端点**、错误码全表，以及版本策略与写操作的分级和门禁。
+> 本文是 AWFM 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 32 个端点**、错误码全表，以及版本策略与写操作的分级和门禁。
 >
-> 文档日期 **2026-10-16** · 版本 `app/__init__.py:7`（`0.1.0`；v0.1.1 开发中，已新增第 20~22 号检索端点、第 23~28 号在线编辑与文件操作端点）· 路由注册处 `app/api/handlers.py:434`（`ENDPOINTS`）与 `app/api/handlers.py:466`（`build_router()`）
+> 文档日期 **2026-10-16** · 版本 `app/__init__.py:7`（`0.1.0`；v0.1.1 开发中，已新增第 20~22 号检索端点、第 23~28 号在线编辑与文件操作端点、第 29~32 号在线虚拟机发现端点）· 路由注册处 `app/api/handlers.py:472`（`ENDPOINTS`）与 `app/api/handlers.py:509`（`build_router()`）
 >
 > 文中的 `handlers.py:NN` / `errors.py:NN` 行号按本文日期的工作树核对。v0.1.1 期间往 `ENDPOINTS` 里插端点会让旧行号漂移，引用时请以**函数名**为准。
 
@@ -20,13 +20,14 @@
 | 协议版本 | HTTP/1.1（`protocol_version = "HTTP/1.1"`，因此响应必须给出 `Content-Length` 或 `Connection: close`） | `app/api/http_server.py:95` |
 | 认证 | 除 `GET /api/health` 外，所有 `/api/` 请求都必须带 `X-AWFM-Token` 头 | `app/api/security.py:44`、`:48`、`:132` |
 | 并发 | `ThreadingHTTPServer`，每请求一线程 | `app/api/http_server.py:81` |
-| 端点总数 | 28 | `app/api/handlers.py:434-463` |
+| 端点总数 | 32 | `app/api/handlers.py:472-506` |
 
 端点分成三组：
 
 - **连接级**（不需要已连接的会话，挂在 `/api/connections` 与 `/api/connections/{connection_id}` 之下）：`/api/connections` 的增删改查、`connect`、`disconnect`、`status`、`host-keys`、`host-keys/trust`；
 - **会话级**（必须已连接，否则 `404 session_not_found`）：`files`、`stat`、`preview`、`download-ticket`、`download`、`upload`、`upload-check`、`search`、`text`（GET 读 / PUT 写）、`rename`、`delete`、`compress`、`extract`；
 - **检索级**（只认检索 id，与具体连接解耦）：`GET`/`DELETE /api/searches/{search_id}`。检索是异步的：`POST …/search` 拿 id，之后轮询或中止都走这两个地址。
+- **发现级**（不挂在任何连接之下，也不要求已连接）：`GET /api/discovery`、`POST /api/discovery/scan`、`GET`/`DELETE /api/discovery/scans/{scan_id}`。扫描同样是异步的（202 + id），读的是**宿主机自己**的 VMware 状态，因此不需要任何连接配置。
 
 ---
 
@@ -159,36 +160,40 @@ Content-Type: application/json
 
 | # | 方法 | 路径 | 处理函数 | 说明 |
 |---|---|---|---|---|
-| 1 | GET | `/api/health` | `health`（`handlers.py:26`） | 健康检查，免令牌 |
-| 2 | GET | `/api/session` | `session_info`（`:38`） | 服务与安全策略摘要（含 `max_edit_bytes`） |
-| 3 | GET | `/api/connections` | `list_connections`（`:58`） | 连接配置列表 + 会话状态 |
-| 4 | POST | `/api/connections` | `create_connection`（`:68`） | 新增连接（201） |
-| 5 | GET | `/api/connections/{connection_id}` | `get_connection`（`:62`） | 单条连接配置 |
-| 6 | PATCH | `/api/connections/{connection_id}` | `update_connection`（`:76`） | 局部更新 |
-| 7 | DELETE | `/api/connections/{connection_id}` | `delete_connection`（`:82`） | 删除并先断开 |
-| 8 | POST | `/api/connections/{connection_id}/connect` | `connect`（`:88`） | 建立（或重建）会话 |
-| 9 | POST | `/api/connections/{connection_id}/disconnect` | `disconnect`（`:102`） | 断开（幂等） |
-| 10 | GET | `/api/connections/{connection_id}/status` | `connection_status`（`:110`） | 会话状态 |
-| 11 | GET | `/api/connections/{connection_id}/host-keys` | `list_host_keys`（`:114`） | 信任库中该主机的指纹 |
-| 12 | POST | `/api/connections/{connection_id}/host-keys/trust` | `trust_host_key`（`:119`） | 用户确认后写入信任库 |
-| 13 | GET | `/api/connections/{connection_id}/files` | `list_files`（`:138`） | 列目录 |
-| 14 | GET | `/api/connections/{connection_id}/stat` | `stat_file`（`:144`） | 单个路径的元数据 |
-| 15 | GET | `/api/connections/{connection_id}/preview` | `preview_file`（`:151`） | 文本预览（只读、有上限） |
-| 16 | POST | `/api/connections/{connection_id}/download-ticket` | `download_ticket`（`:193`） | 换取下载票据 |
-| 17 | GET | `/api/connections/{connection_id}/download` | `download_file`（`:216`） | 二进制流下载 |
-| 18 | POST | `/api/connections/{connection_id}/upload` | `upload_file`（`:262`） | 上传（201 新建 / 200 覆盖） |
-| 19 | GET | `/api/connections/{connection_id}/upload-check` | `check_upload`（`:279`） | 上传前的覆盖预检 |
-| 20 | POST | `/api/connections/{connection_id}/search` | `start_search`（`:162`） | 启动检索（**202**，后台线程里跑） |
-| 21 | GET | `/api/searches/{search_id}` | `search_status`（`:182`） | 轮询检索进度 / 取结果 |
-| 22 | DELETE | `/api/searches/{search_id}` | `cancel_search`（`:186`） | 请求中止（幂等） |
-| 23 | GET | `/api/connections/{connection_id}/text` | `read_text`（`:294`） | 读出文本供在线编辑（只读操作，不需要写权限） |
-| 24 | PUT | `/api/connections/{connection_id}/text` | `save_text`（`:308`） | 保存文本，带冲突检测（写操作） |
-| 25 | POST | `/api/connections/{connection_id}/rename` | `rename_entry`（`:356`） | 重命名条目（写操作） |
-| 26 | POST | `/api/connections/{connection_id}/delete` | `delete_entry`（`:369`） | 删除文件 / 目录（目录非空要显式递归） |
-| 27 | POST | `/api/connections/{connection_id}/compress` | `compress_entry`（`:386`） | 压缩成 `.tar.gz`（**201**） |
-| 28 | POST | `/api/connections/{connection_id}/extract` | `extract_entry`（`:402`） | 解压（**201**） |
+| 1 | GET | `/api/health` | `health`（`handlers.py:32`） | 健康检查，免令牌 |
+| 2 | GET | `/api/session` | `session_info`（`:44`） | 服务与安全策略摘要（含 `max_edit_bytes`） |
+| 3 | GET | `/api/connections` | `list_connections`（`:64`） | 连接配置列表 + 会话状态 |
+| 4 | POST | `/api/connections` | `create_connection`（`:74`） | 新增连接（201） |
+| 5 | GET | `/api/connections/{connection_id}` | `get_connection`（`:68`） | 单条连接配置 |
+| 6 | PATCH | `/api/connections/{connection_id}` | `update_connection`（`:82`） | 局部更新 |
+| 7 | DELETE | `/api/connections/{connection_id}` | `delete_connection`（`:88`） | 删除并先断开 |
+| 8 | POST | `/api/connections/{connection_id}/connect` | `connect`（`:94`） | 建立（或重建）会话 |
+| 9 | POST | `/api/connections/{connection_id}/disconnect` | `disconnect`（`:108`） | 断开（幂等） |
+| 10 | GET | `/api/connections/{connection_id}/status` | `connection_status`（`:116`） | 会话状态 |
+| 11 | GET | `/api/connections/{connection_id}/host-keys` | `list_host_keys`（`:120`） | 信任库中该主机的指纹 |
+| 12 | POST | `/api/connections/{connection_id}/host-keys/trust` | `trust_host_key`（`:125`） | 用户确认后写入信任库 |
+| 13 | GET | `/api/connections/{connection_id}/files` | `list_files`（`:144`） | 列目录 |
+| 14 | GET | `/api/connections/{connection_id}/stat` | `stat_file`（`:150`） | 单个路径的元数据 |
+| 15 | GET | `/api/connections/{connection_id}/preview` | `preview_file`（`:157`） | 文本预览（只读、有上限） |
+| 16 | POST | `/api/connections/{connection_id}/download-ticket` | `download_ticket`（`:231`） | 换取下载票据 |
+| 17 | GET | `/api/connections/{connection_id}/download` | `download_file`（`:254`） | 二进制流下载 |
+| 18 | POST | `/api/connections/{connection_id}/upload` | `upload_file`（`:300`） | 上传（201 新建 / 200 覆盖） |
+| 19 | GET | `/api/connections/{connection_id}/upload-check` | `check_upload`（`:317`） | 上传前的覆盖预检 |
+| 20 | POST | `/api/connections/{connection_id}/search` | `start_search`（`:168`） | 启动检索（**202**，后台线程里跑） |
+| 21 | GET | `/api/searches/{search_id}` | `search_status`（`:188`） | 轮询检索进度 / 取结果 |
+| 22 | DELETE | `/api/searches/{search_id}` | `cancel_search`（`:192`） | 请求中止（幂等） |
+| 23 | GET | `/api/connections/{connection_id}/text` | `read_text`（`:332`） | 读出文本供在线编辑（只读操作，不需要写权限） |
+| 24 | PUT | `/api/connections/{connection_id}/text` | `save_text`（`:346`） | 保存文本，带冲突检测（写操作） |
+| 25 | POST | `/api/connections/{connection_id}/rename` | `rename_entry`（`:394`） | 重命名条目（写操作） |
+| 26 | POST | `/api/connections/{connection_id}/delete` | `delete_entry`（`:407`） | 删除文件 / 目录（目录非空要显式递归） |
+| 27 | POST | `/api/connections/{connection_id}/compress` | `compress_entry`（`:424`） | 压缩成 `.tar.gz`（**201**） |
+| 28 | POST | `/api/connections/{connection_id}/extract` | `extract_entry`（`:440`） | 解压（**201**） |
+| 29 | GET | `/api/discovery` | `discovery_environment`（`:199`） | 这台机器上发现功能能读到什么（六个来源的状态与上限） |
+| 30 | POST | `/api/discovery/scan` | `start_discovery`（`:209`） | 开始扫描（**202**，后台线程里跑） |
+| 31 | GET | `/api/discovery/scans/{scan_id}` | `discovery_status`（`:220`） | 轮询扫描进度 / 取结果 |
+| 32 | DELETE | `/api/discovery/scans/{scan_id}` | `cancel_discovery`（`:224`） | 请求中止（幂等） |
 
-第 23~28 号是 v0.1.1 阶段四新增的写入口，全部受连接级 `allow_write` 开关约束（见 §7.2）。
+第 23~28 号是 v0.1.1 阶段四新增的写入口，全部受连接级 `allow_write` 开关约束（见 §7.2）；第 29~32 号是 v0.1.1 阶段五新增的在线虚拟机发现端点，**只读且与连接无关**——不读也不写任何连接配置、不建立 SSH 会话（见 §5.29–5.32 与 §7.4）。
 
 以下所有示例都省略了请求头 `X-AWFM-Token`（除健康检查外都必须有），`connection_id` 一律用 `vm1`。
 
@@ -887,6 +892,121 @@ Content-Type: application/json
 
 - 可能的错误：`invalid_request`（400，含成员越界与上限）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`payload_too_large`（413，压缩包自身过大）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502，含「解压写出的字节数与压缩包记录不一致」）、`timeout`（504）。
 
+### 5.29 GET /api/discovery
+
+这台机器上「发现」能读到什么。**不读大文件、也不探测**，只回答环境与上限，所以页面加载时就可以先调它来决定扫描入口是否可用。
+
+无请求体。
+
+成功（**200**）：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "environment": {
+      "enabled": true,
+      "platform": "win32",
+      "vmware": {
+        "install_path": "E:\\VMware Workstation Pro",
+        "vmrun_path": "E:\\VMware Workstation Pro\\vmrun.exe",
+        "inventory_path": "C:\\Users\\Aimu2\\AppData\\Roaming\\VMware\\inventory.vmls",
+        "dhcp_conf_path": "C:\\ProgramData\\VMware\\vmnetdhcp.conf",
+        "dhcp_leases_path": "C:\\ProgramData\\VMware\\vmnetdhcp.leases",
+        "notes": []
+      },
+      "sources": [
+        { "name": "inventory", "label": "VMware 清单", "state": "ok", "detail": "清单文件存在。", "count": 0 },
+        { "name": "vmrun", "label": "vmrun（运行状态）", "state": "ok", "detail": "E:\\VMware Workstation Pro\\vmrun.exe", "count": 0 },
+        { "name": "vmnet", "label": "虚拟网段配置", "state": "ok", "detail": "C:\\ProgramData\\VMware\\vmnetdhcp.conf", "count": 0 },
+        { "name": "lease", "label": "DHCP 租约", "state": "ok", "detail": "C:\\ProgramData\\VMware\\vmnetdhcp.leases", "count": 0 },
+        { "name": "neighbor", "label": "系统邻居表", "state": "ok", "detail": "Get-NetNeighbor（失败时回退 arp -a）。", "count": 0 },
+        { "name": "process", "label": "VMware 进程命令行", "state": "denied", "detail": "读取 VMware 进程的命令行需要管理员权限，已跳过；运行状态改由 vmrun 判断。", "count": 0 }
+      ],
+      "limits": {
+        "enabled": true,
+        "probe_ssh": true,
+        "probe_timeout_seconds": 1.0,
+        "max_probe_workers": 16,
+        "max_addresses_per_subnet": 254,
+        "max_probes": 512,
+        "time_budget_seconds": 60
+      },
+      "notes": ["VMware 安装位置取自注册表 HKLM\\SOFTWARE\\VMware, Inc.\\VMware Workstation。"]
+    }
+  }
+}
+```
+
+- 六个来源的名字固定为 `inventory`、`vmrun`、`vmnet`、`lease`、`neighbor`、`process`，顺序固定。`state` 取值：`ok`（读得到）/ `empty`（读了，里面没有内容）/ `missing`（文件不在磁盘上）/ `unavailable`（这台机器上读不到，例如非 Windows 读邻居表，或压根没装 VMware）/ `denied`（权限不够）/ `error`（读了但出错）。
+- `process` **恒为 `denied`**：非管理员读不到 `vmware-vmx.exe` 的命令行（实测如此），所以运行状态一律改由 `vmrun list` 判断。这一项留在表里，是为了如实说明「有件事我们没读到，以及为什么」。
+- `limits` 里的七个值就是 §5.30 那次扫描会用到的上限；`enabled` 为 `false` 时应直接把扫描入口禁用。
+- 不需要任何连接，也不要求已连接。
+- 可能的错误：`unauthorized`（401）。
+
+### 5.30 POST /api/discovery/scan
+
+开始扫描。**异步**：立刻返回一个扫描快照，真正的读取与探测跑在后台线程里，之后用 §5.31 轮询。
+
+无请求体。
+
+成功（**202**）：
+
+```json
+{ "ok": true, "data": { "scan": { "id": "9f3c1a70b2d4", "status": "running", "running": true, "stage": "starting", "duration_seconds": null, "error": null, "counts": { "vms": 0, "running": 0, "stopped": 0, "unknown_state": 0, "with_address": 0, "ssh_open": 0, "online": 0, "other_addresses": 0 }, "probes": { "enabled": true, "planned": 0, "done": 0, "open": 0, "responded": 0, "timeout_seconds": 1.0 }, "notes": [], "interrupted": false, "truncated": false, "truncated_reason": "" } } }
+```
+
+- 同一时刻只允许一个扫描：已经有扫描在跑时返回 **409** `discovery_busy`，`detail` 是「请等它结束，或在结果区点「中止」。」。
+- 配置里关掉时（`discovery.enabled = false`）→ **400** `invalid_request`，消息「在线虚拟机发现在配置里是关闭的。」，`detail` 是「把配置里的 discovery.enabled 改成 true 再重启程序。」。
+- 不读也不写连接表，不建立 SSH 会话。
+- 可能的错误：`unauthorized`（401）、`invalid_request`（400）、`discovery_busy`（409）。
+
+### 5.31 GET /api/discovery/scans/{scan_id}
+
+轮询进度与结果。`scan_id` 的形状是 12 位小写十六进制，其它形状根本走不到处理器（一律 404）。
+
+快照字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `id` | 扫描 id |
+| `status` | `running` / `done` / `cancelled` / `failed` |
+| `running` | `status` 是否为 `running` |
+| `stage` | `starting` / `inventory` / `running` / `vmx` / `leases` / `neighbors` / `probe` / `done` |
+| `started_at`、`finished_at` | Unix 秒（浮点）；未结束为 `null` |
+| `duration_seconds` | 保留三位小数；未结束为 `null` |
+| `error` | `null`，或 `{ "code", "message", "detail" }` |
+| `vmware`、`sources`、`subnets`、`vms`、`addresses`、`counts`、`probes`、`addresses_all`、`notes`、`interrupted`、`truncated`、`truncated_reason`、`limits` | 结果本体；扫描结束前是同一套键的空骨架 |
+
+`stage` 是「正在做哪一步」，扫描结束时收成 `done`；`status` 为 `failed` 时故意保留当时那一步，好看出卡在哪。
+
+结果本体：
+
+- **三种状态是三件事，界面上必须分开说**：`counts.vms` 是「清单与 .vmx 里发现的虚拟机」；`answer_state` 为 `online`/`ssh_open` 是「这个地址有人应答」；`ssh_open` 为 `true` 才是「这里能连 SSH」。
+- `subnets[]`：`{vmnet, network, netmask, prefix, range_start, range_end, gateway, host_address, source}`。`vmnet` 编号取自 `vmnetdhcp.conf` 的注释（不靠网段地址反推），`host_address` 是本机在这张虚拟网卡上的地址。
+- `vms[]`：`{name, vmx, vmx_exists, in_inventory, uuid, guest_os, memory_mb, cpus, nics, state, running, running_source, addresses, ip, ip_source, answer_state, ssh_open, ssh_port, sources, notes}`。
+  - `state` 是 `running` / `stopped` / `unknown`：`vmrun` 读不到时一律 `unknown`（**不是「已关机」**），`running` 此时为 `null`。`running_source` 说明运行状态是哪来的。
+  - `answer_state` ∈ `unknown_address`（一个地址都没有）/ `not_probed`（有地址但没探过）/ `ssh_open` / `online`（有应答但 22 端口不通）/ `no_answer`；`ssh_open` 是布尔值或 **`null`**——`null` 表示「一个地址都没探测过，不知道」，**不是**「确定连不上」。
+  - `notes` 是这台机器自己的追加说明（例如「租约地址 192.168.170.130 已过期，只能当作线索。」）。
+- `addresses[]` 是「其它地址」：落在已知虚拟网段里、又不属于任何已发现虚拟机的地址（最多 20 条）；`addresses_all[]` 是全部地址（含虚拟机自己的），条目结构相同。
+- 地址条目：`{ip, mac, source, subnet, in_known_subnet, port, probed, responded, ssh_open, ssh_state, elapsed_ms}`。`ssh_state` 是**探测的原始结论**：`open` / `refused`（收到 RST，说明主机在线但没有 SSH）/ `timeout` / `unreachable` / `not_probed` / `error`；`source` 说明地址是哪来的（`guest` 客户机自报 / `neighbor` 邻居表 / `lease` 租约 / `arp` / `vmnet`）。
+- `counts`：`{vms, running, stopped, unknown_state, with_address, ssh_open, online, other_addresses}`。`with_address` 是至少有一个地址的台数，`ssh_open` 与 `online` 不会超过它。
+- `probes`：`{enabled, planned, done, open, responded, timeout_seconds}`。`done` 是真正试过的地址数（哪怕那一次探测出错也算）。
+- `notes` 是整轮扫描的说明：过滤掉多少条邻居记录、跳过了哪些本机与网关地址、碰到上限时停在哪里。
+- `interrupted` 表示**用户中止**（没做完）；`truncated` 与 `truncated_reason` 表示**碰到上限**（做完了但在上限处停下）。两者可能同时为真。
+
+- 可能的错误：`unauthorized`（401）、`path_not_found`（404，扫描不存在或已过期——只保留最近若干次）。
+
+### 5.32 DELETE /api/discovery/scans/{scan_id}
+
+请求中止扫描。**幂等**：已经在收尾的扫描再 DELETE 一次也不报错。
+
+成功（**200**）：返回当时的快照。
+
+- 返回时 `running` 可能仍是 `true`：读清单、跑 `vmrun`、查邻居表这几步打断不了（子进程就那个长度），只有探测阶段能很快收手。真正停下后再轮询，`status` 会是 `cancelled`。
+- 取消来晚了、活儿已经干完的那次仍然报 `done`。**不要**用状态猜用户意图，请读 `interrupted`。
+- 可能的错误：`unauthorized`（401）、`path_not_found`（404）。
+
 ---
 ## 6 错误码全表
 
@@ -906,12 +1026,13 @@ Content-Type: application/json
 | `host_key_mismatch` | 409 | 主机密钥与信任库记录不符，必须人工介入 | `errors.py:153` |
 | `search_busy` | 409 | 同一条连接上已有正在进行的检索（`app/services/search.py` 的 `SearchRegistry.start`） | `errors.py:195` |
 | `edit_conflict` | 409 | 保存时远端文件已被改动（`extra.reason` 为 `content`/`size`/`mtime`），拒绝覆盖他人修改 | `errors.py:210` |
+| `discovery_busy` | 409 | 已有一个正在进行的扫描（`app/services/discovery.py` 的 `DiscoveryRegistry.start`） | `errors.py:225` |
 | `payload_too_large` | 413 | 请求体超过 1 MiB，或文件超过 `max_upload_bytes` / `max_download_bytes` / `security.max_edit_bytes` | `errors.py:88` |
-| `internal_error` | 500 | 未预期的内部异常；端口被占用、绑定地址不可用 | `errors.py:226` |
+| `internal_error` | 500 | 未预期的内部异常；端口被占用、绑定地址不可用 | `errors.py:241` |
 | `config_error` | 500 | 配置文件损坏/不可读/写失败；找不到 `ssh` 客户端 | `errors.py:95` |
 | `remote_error` | 502 | 远端返回其它错误（SFTP `STATUS` 4 或未映射码）；保存时改名/替换失败 | `errors.py:181` |
 | `protocol_error` | 502 | SFTP 协议层异常：帧不合法、序列错位、通道提前关闭；写入字节数与预期不符 | `errors.py:188` |
-| `timeout` | 504 | 操作超时（看门狗杀掉 `ssh` 子进程） | `errors.py:221` |
+| `timeout` | 504 | 操作超时（看门狗杀掉 `ssh` 子进程） | `errors.py:236` |
 
 ---
 
@@ -922,8 +1043,8 @@ Content-Type: application/json
 - 应用版本在 `app/__init__.py:7`（当前 `0.1.0`），通过 `Server` 响应头与 `GET /api/health`、`GET /api/session` 暴露。API 路径**不带版本前缀**——这是本地单用户服务，前后端同版本发布、同一次启动一起加载（前端资源由同一个进程提供），因此不需要 URL 版本协商。
 - 配置文件有自己的版本号：`CONFIG_VERSION = 1`（`app/core/config.py` 的 `DEFAULTS["config_version"]`）。读到**更高版本**的配置文件会拒绝启动，而不是猜测字段含义；配置损坏时同样报 `config_error`，**绝不静默重置**（决策 D-006）。
 - 前端在启动时先调 `GET /api/session`，可以据此判断服务能力（例如 `max_upload_bytes`、`max_download_bytes`、`host_key_policy`），比硬编码版本号更稳。
-- **v0.1.1 开发中**：本版本在 v0.1.0 之上增加了远端文件检索（第 20~22 号端点）与在线编辑、文件操作（第 23~28 号端点）。`app/__init__.py` 里的版本号目前仍是 `0.1.0`，待阶段六交付时统一改为 `0.1.1` 并重新打包；端点路径、响应信封与既有端点的行为都不变（纯新增）。
-- **v0.1.1 新增的配置键**：`security.max_edit_bytes`（默认 `2097152`，即 2 MiB，允许 1024 ~ 64 MiB）。它同时出现在 `GET /api/session` 的返回里；在线编辑的读与写都按它设上限，**服务端是唯一权威**（前端只用来提示）。
+- **v0.1.1 开发中**：本版本在 v0.1.0 之上增加了远端文件检索（第 20~22 号端点）、在线编辑与文件操作（第 23~28 号端点）、在线虚拟机发现（第 29~32 号端点）。`app/__init__.py` 里的版本号目前仍是 `0.1.0`，待阶段六交付时统一改为 `0.1.1` 并重新打包；端点路径、响应信封与既有端点的行为都不变（纯新增）。
+- **v0.1.1 新增的配置键**：`security.max_edit_bytes`（默认 `2097152`，即 2 MiB，允许 1024 ~ 64 MiB）。它同时出现在 `GET /api/session` 的返回里；在线编辑的读与写都按它设上限，**服务端是唯一权威**（前端只用来提示）。阶段五又加了 `discovery` 段九个键（`enabled`、`probe_ssh`、`probe_timeout_seconds`、`max_probe_workers`、`max_addresses_per_subnet`、`max_probes`、`time_budget_seconds`、`vmware_root`、`vmware_data_dir`），默认值与取值范围见 `config/config.example.json` 与用户手册 §10.2。
 
 ### 7.2 写操作的分级与门禁
 
@@ -947,6 +1068,17 @@ v0.1.1 阶段四把「远端文本编辑 + 压缩 / 重命名 / 解压 / 删除�
 ### 7.3 静态资源
 
 非 `/api/` 路径由静态处理器提供（`app/api/http_server.py:210`）：`/` 映射到 `frontend/index.html`；只允许 `GET` 与 `HEAD`；拒绝 `\` 与 `NUL`、拒绝 `.`/`..` 分量，解析后的真实路径必须仍在 `frontend/` 之内（`app/api/http_server.py:267` `_is_within`）。未知后缀抛 `invalid_request`。`index.html` 响应时会注入令牌与版本 meta（见 §3.1）。
+
+### 7.4 在线虚拟机发现读什么、不读什么
+
+第 29~32 号端点是 AWFM 里**唯一会自己往外连**的功能：要连的地址不是用户填的，而是从这台机器的 VMware 状态里读出来的。因此它的边界比别的入口都紧：
+
+- **只读本地那几样东西**：VMware 的清单文件（`inventory.vmls`）、`vmrun list`（运行状态）、虚拟机的 `.vmx`（名称、客户机类型、网卡 MAC）、`vmnetdhcp.conf` 与 `vmnetdhcp.leases`（虚拟网段与地址历史）、系统邻居表（`Get-NetNeighbor`，失败时回退 `arp -a`）。
+- **只探测已知虚拟网段**：候选地址必须先落在 `vmnetdhcp.conf` 声明的网段之内（本机是 `192.168.11.0/24` 与 `192.168.170.0/24`）。公网地址、本机虚拟网卡地址、网关地址一律不探。
+- **只探 22 端口，且有四道上限**：每个地址一次 TCP 连接（默认 1 秒超时）；每个网段最多 `max_addresses_per_subnet` 个地址；整轮最多 `max_probes` 次探测；总时长不超过 `time_budget_seconds`。碰到上限就停下，并把原因写进 `truncated_reason`。
+- **不跑远端命令、不建立 SSH 会话**：「SSH 可用」是直接对 22 端口做一次 TCP 连接试出来的，**没有登录**、没有执行任何命令、不会派生 `ssh` 子进程；扫描也不修改 VMware 的任何文件（回归用例逐字节比对这几个文件）。
+- **结果只是候选**：扫描不会自动写入连接表、不会自动记住主机指纹、也不会自动连接。界面上点「创建连接」只是把地址预填进新建连接表单，保存与否由用户决定；之后点「连接」时仍然走既有的主机指纹首次确认。
+- **读不到的东西要如实说明**：`process` 来源恒为 `denied`（非管理员读不到 `vmware-vmx.exe` 的命令行，实测如此），于是运行状态改由 `vmrun` 判断；`vmrun` 也读不到时，虚拟机的状态一律是 `unknown`，**不是**「已关机」。
 
 ---
 

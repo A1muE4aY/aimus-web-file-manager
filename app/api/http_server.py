@@ -31,6 +31,7 @@ from app.api.tickets import DownloadTickets
 from app.core.errors import AwfmError, InternalError, PathNotFound, ValidationError
 from app.core.config import AppConfig
 from app.services.connection_manager import ConnectionManager
+from app.services.discovery import DiscoveryRegistry
 from app.services.search import SearchRegistry
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,11 @@ class AppContext:
 
     config: AppConfig
     manager: ConnectionManager
+    #: 在线虚拟机扫描。它要读配置（开关与各项上限），所以在 create_server 里
+    #: 显式构造，而不是像搜索那样给一个无参默认值 —— 忘传会立刻报错，
+    #: 不会悄悄跑在一个默认配置上。扫描同样跨请求存活（一个请求启动、
+    #: 若干个请求轮询），所以和搜索一样挂在上下文里。
+    discovery: DiscoveryRegistry
     token: str = field(default_factory=new_session_token)
     tickets: DownloadTickets = field(default_factory=DownloadTickets)
     #: 正在跑与刚跑完的文件检索。搜索要跨请求存活（启动一个请求、轮询若干请求），
@@ -298,7 +304,11 @@ def _is_within(base: Path, target: Path) -> bool:
 
 def create_server(config: AppConfig, manager: ConnectionManager) -> AwfmHTTPServer:
     """按配置建好服务器（尚未开始监听）。"""
-    context = AppContext(config=config, manager=manager)
+    context = AppContext(
+        config=config,
+        manager=manager,
+        discovery=DiscoveryRegistry(config),
+    )
     context.router = handlers.build_router()
     host = config.server.host
     port = config.server.port

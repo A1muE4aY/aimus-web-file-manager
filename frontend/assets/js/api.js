@@ -310,3 +310,33 @@ export function uploadFile(id, directory, file, options) {
     xhr.send(file);
   });
 }
+
+/* ------------------------------------------- 在线虚拟机发现（v0.1.1 阶段五） */
+
+/**
+ * 发现能力的只读概览：本机有哪些来源可用、读不到的为什么读不到。
+ *
+ * 它不读大文件也不探测任何地址，所以打开界面时就可以先调它；发现功能在配置里
+ * 关闭时返回 enabled=false，界面据此把入口说明改成「已关闭」。
+ */
+export function discoveryEnvironment() {
+  return request("GET", "/api/discovery");
+}
+
+/**
+ * 发起一次扫描。
+ *
+ * 后端用 202 表示「已受理」—— 拿到的只是初始快照，之后按 /api/discovery/scans/<id>
+ * 轮询。同一时刻后端只允许一个扫描，重复发起会拿到 409 discovery_busy。
+ */
+export function startDiscovery() {
+  return request("POST", "/api/discovery/scan");
+}
+
+export function discoveryStatus(scanId) {
+  return request("GET", "/api/discovery/scans/" + qs(scanId));
+}
+
+export function cancelDiscovery(scanId) {
+  return request("DELETE", "/api/discovery/scans/" + qs(scanId));
+}

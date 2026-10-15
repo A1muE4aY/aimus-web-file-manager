@@ -403,6 +403,42 @@ def search_and_wait(
     return wait_for_search(client, response.data["search"]["id"], timeout=timeout)
 
 
+# --------------------------------------------------------- 在线虚拟机发现
+
+DISCOVERY_SCAN_PATH = "/api/discovery/scan"
+
+#: 扫描的终态。中止之后也可能是 done（活儿已经干完了），所以两种都算结束。
+DISCOVERY_TERMINAL = ("done", "cancelled", "failed")
+
+
+def start_discovery_scan(client) -> str:
+    """开始一次在线虚拟机扫描（成功时是 202），返回 scan_id。"""
+    response = client.post(DISCOVERY_SCAN_PATH)
+    if response.status != 202:
+        raise AssertionError("开始扫描失败：%r" % (response,))
+    return response.data["scan"]["id"]
+
+
+def wait_discovery_scan(client, scan_id: str, *, timeout: float = 180.0, interval: float = 0.2) -> dict:
+    """轮询到扫描结束，返回快照。超时抛断言错误（而不是让用例静静地过）。"""
+    deadline = time.time() + timeout
+    while True:
+        response = client.get("/api/discovery/scans/" + scan_id)
+        if not response.ok:
+            raise AssertionError("查询扫描状态失败：%r" % (response,))
+        snapshot = response.data["scan"]
+        if snapshot["status"] in DISCOVERY_TERMINAL:
+            return snapshot
+        if time.time() > deadline:
+            raise AssertionError("扫描 %s 在 %s 秒内没有结束：%r" % (scan_id, timeout, snapshot))
+        time.sleep(interval)
+
+
+def scan_and_wait(client, *, timeout: float = 180.0) -> dict:
+    """发起 + 等结束，返回最终快照。"""
+    return wait_discovery_scan(client, start_discovery_scan(client), timeout=timeout)
+
+
 # ----------------------------------------------------------------- 阶段四造景
 
 

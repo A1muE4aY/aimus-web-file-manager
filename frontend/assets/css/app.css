@@ -989,4 +989,110 @@ td.col-dir {
   #file-table .col-action { width: auto; min-width: 160px; }
 }
 
+/* ------------------------------------------------- 在线虚拟机发现（v0.1.1 阶段五） */
+
+/* 侧栏标题右边现在有两个按钮（扫描 / + 新增），排成一行。 */
+.sidebar-head-actions { display: flex; gap: 6px; }
+
+/* 表单顶部的一段说明（例如「以下内容来自扫描结果」）。 */
+.form-notice {
+  margin: 0 0 13px;
+  padding: 7px 9px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.discovery-body { display: flex; flex-direction: column; gap: 12px; }
+
+.discovery-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.discovery-status {
+  padding: 2px 9px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+}
+
+.discovery-status[data-state="starting"],
+.discovery-status[data-state="running"] { border-color: var(--accent); background: var(--accent-weak); color: var(--accent); }
+.discovery-status[data-state="done"] { border-color: var(--ok); background: var(--ok-weak); color: var(--ok); }
+.discovery-status[data-state="failed"] { border-color: var(--danger); background: var(--danger-weak); color: var(--danger); }
+.discovery-status[data-state="cancelled"] { border-color: var(--warn); background: var(--warn-weak); color: var(--warn); }
+
+.discovery-progress { font-family: var(--mono); font-size: 12px; color: var(--text-dim); overflow-wrap: anywhere; }
+.discovery-head-right { margin-left: auto; display: flex; gap: 6px; }
+
+.discovery-hint {
+  margin: 0;
+  padding: 7px 9px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.discovery-hint[hidden] { display: none; }
+.discovery-hint[data-kind="warn"] { color: var(--warn); background: var(--warn-weak); border-color: var(--warn); }
+.discovery-hint[data-kind="error"] { color: var(--danger); background: var(--danger-weak); border-color: var(--danger); }
+
+.discovery-env summary { cursor: pointer; font-size: 12.5px; color: var(--text-dim); }
+.discovery-env[open] summary { margin-bottom: 8px; }
+
+.discovery-sources { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.discovery-sources th {
+  padding: 3px 10px 4px 0;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+}
+.discovery-sources td {
+  padding: 3px 10px 3px 0;
+  color: var(--text-dim);
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.discovery-sources tr:last-child td { border-bottom: 0; }
+.discovery-sources .is-ok { color: var(--ok); }
+.discovery-sources .is-warn { color: var(--warn); }
+.discovery-sources .is-dim { color: var(--text-faint); }
+
+.discovery-rows h3 { margin: 0 0 6px; font-size: 13px; }
+.discovery-rows[hidden] { display: none; }
+
+/* 结果表可能很长（VMnet8 的池里有上百个地址），给个上限并让表头钉住。 */
+.discovery-table-wrap {
+  max-height: 34vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.discovery-table thead th { cursor: default; position: sticky; top: 0; background: var(--surface); }
+.discovery-table tbody tr { cursor: default; }
+.discovery-table .col-ip { font-family: var(--mono); font-size: 12px; }
+.discovery-table .col-action { width: 92px; text-align: right; }
+
+.discovery-name { font-size: 13px; font-family: var(--mono); }
+.discovery-ip { font-family: var(--mono); font-size: 12px; }
+.discovery-sub { margin-top: 2px; font-size: 11.5px; color: var(--text-faint); overflow-wrap: anywhere; }
+.discovery-sub.is-warn { color: var(--warn); }
+
+.discovery-answer { font-size: 12.5px; }
+.discovery-answer[data-state="ssh_open"] { color: var(--ok); }
+.discovery-answer[data-state="online"] { color: var(--accent); }
+.discovery-answer[data-state="no_answer"],
+.discovery-answer[data-state="not_probed"],
+.discovery-answer[data-state="unknown_address"] { color: var(--text-faint); }
+
+.discovery-empty { margin: 0; font-size: 12.5px; color: var(--text-faint); }
+.discovery-empty[hidden] { display: none; }
+.discovery-foot { margin: 0; font-size: 11.5px; color: var(--text-faint); overflow-wrap: anywhere; }
+
 

@@ -35,11 +35,15 @@
     <aside class="sidebar">
       <div class="sidebar-head">
         <h2>连接</h2>
-        <button type="button" class="btn btn-small" id="btn-new-connection">+ 新增</button>
+        <span class="sidebar-head-actions">
+          <button type="button" class="btn btn-small" id="btn-scan-vms"
+                  title="扫描本机的虚拟机，找出现在能连的机器">扫描</button>
+          <button type="button" class="btn btn-small" id="btn-new-connection">+ 新增</button>
+        </span>
       </div>
       <ul class="conn-list" id="conn-list" aria-label="连接列表"></ul>
       <p class="empty-hint" id="conn-empty" hidden>
-        还没有配置任何连接。<br>点右上角「+ 新增」，填入虚拟机的地址与登录方式。
+        还没有配置任何连接。<br>点右侧「+ 新增」手工填入地址与登录方式，<br>或点「扫描」让工具去虚拟机网络里找一台。
       </p>
     </aside>
 

@@ -218,6 +218,21 @@ class EditConflict(AwfmError):
     http_status = 409
 
 
+# --------------------------------------------------------------------------
+# 在线虚拟机发现
+# --------------------------------------------------------------------------
+
+class DiscoveryBusy(AwfmError):
+    """已经有一个正在进行的扫描。
+
+    扫描要读若干本地文件并（可选地）对网段里的地址做 TCP 探测，同时跑两次既没有
+    意义又会互相干扰进度显示，所以这里**拒绝**而不是排队（与 SearchBusy 同理）。
+    """
+
+    code = "discovery_busy"
+    http_status = 409
+
+
 class OperationTimeout(AwfmError):
     code = "timeout"
     http_status = 504

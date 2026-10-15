@@ -15,7 +15,13 @@ from app.api.request import ApiRequest
 from app.api.responses import begin_stream, send_ok
 from app.core.errors import AwfmError, Unauthorized, ValidationError
 from app.models.connection import Connection
-from app.services import editor, fileops, filesystem, search as search_service, transfer
+from app.services import (
+    editor,
+    fileops,
+    filesystem,
+    search as search_service,
+    transfer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -185,6 +191,38 @@ def search_status(ctx, req: ApiRequest, search_id: str) -> None:
 
 def cancel_search(ctx, req: ApiRequest, search_id: str) -> None:
     send_ok(req.handler, {"search": ctx.searches.cancel(search_id)})
+
+
+# --------------------------------------------------------------- 虚拟机发现
+
+
+def discovery_environment(ctx, req: ApiRequest) -> None:
+    """发现能力的**只读概览**：有哪些来源可用、读不到的原因是什么。
+
+    不读大文件、不探测任何地址，所以页面加载时就可以调它来决定扫描入口是否可用。
+    发现功能整体关闭时这里返回 enabled=false，前端据此把入口藏起来（服务端仍然
+    会拒绝启动扫描 —— 界面只是提示，判断在服务端）。
+    """
+    send_ok(req.handler, {"environment": ctx.discovery.environment()})
+
+
+def start_discovery(ctx, req: ApiRequest) -> None:
+    """发起一次扫描。
+
+    扫描只读本机虚拟化软件留下的信息与有限范围内的地址探测（见
+    app/services/discovery.py 与决策 D-018），**不会**创建连接、不会信任主机指纹、
+    也不会修改任何系统网络配置。202 表示「已受理、尚未完成」。
+    """
+    started = ctx.discovery.start()
+    send_ok(req.handler, {"scan": started.snapshot()}, status=202)
+
+
+def discovery_status(ctx, req: ApiRequest, scan_id: str) -> None:
+    send_ok(req.handler, {"scan": ctx.discovery.snapshot(scan_id)})
+
+
+def cancel_discovery(ctx, req: ApiRequest, scan_id: str) -> None:
+    send_ok(req.handler, {"scan": ctx.discovery.cancel(scan_id)})
 
 
 # --------------------------------------------------------------------- 传输
@@ -460,6 +498,11 @@ ENDPOINTS: list[tuple[str, str, Any]] = [
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/delete", delete_entry),
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/compress", compress_entry),
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/extract", extract_entry),
+    # 发现级：与具体连接无关，所以排在所有连接级端点之后（编号第 29~32，见 docs/API.md §4）。
+    ("GET", r"/api/discovery", discovery_environment),
+    ("POST", r"/api/discovery/scan", start_discovery),
+    ("GET", r"/api/discovery/scans/(?P<scan_id>[0-9a-f]+)", discovery_status),
+    ("DELETE", r"/api/discovery/scans/(?P<scan_id>[0-9a-f]+)", cancel_discovery),
 ]
 
 

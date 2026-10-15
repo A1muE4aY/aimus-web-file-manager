@@ -71,6 +71,17 @@ DEFAULTS: dict[str, Any] = {
         "ssh_executable": "",
         "sftp_executable": "",
     },
+    "discovery": {
+        "enabled": True,
+        "probe_ssh": True,
+        "probe_timeout_seconds": 1.0,
+        "max_probe_workers": 16,
+        "max_addresses_per_subnet": 254,
+        "max_probes": 512,
+        "time_budget_seconds": 60,
+        "vmware_root": "",
+        "vmware_data_dir": "",
+    },
     "connections": [],
 }
 
@@ -87,6 +98,19 @@ def _require_int(value: Any, name: str, *, minimum: int, maximum: int) -> int:
     if not (minimum <= value <= maximum):
         raise ConfigError(f"配置项 {name} 超出允许范围。", detail=f"要求 {minimum}..{maximum}，实际 {value}")
     return value
+
+
+def _require_number(value: Any, name: str, *, minimum: float, maximum: float) -> float:
+    """接受 int 或 float，但**拒绝 bool**（bool 是 int 的子类，True 会变成 1.0 秒）。
+
+    解析成 float 是刻意的：写成 1 与写成 1.0 是同一件事，让用户为小数点纠结没有意义。
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"配置项 {name} 必须是数字。", detail=f"实际值：{value!r}")
+    result = float(value)
+    if not (minimum <= result <= maximum):
+        raise ConfigError(f"配置项 {name} 超出允许范围。", detail=f"要求 {minimum}..{maximum}，实际 {value}")
+    return result
 
 
 def _require_bool(value: Any, name: str) -> bool:
@@ -135,10 +159,36 @@ class SshConfig:
 
 
 @dataclass
+class DiscoveryConfig:
+    """在线虚拟机自动发现（阶段五，决策 D-018）。
+
+    这一组全是「做多少」的旋钮，不是「能不能连」的开关：发现只产出候选，
+    创建连接仍然要用户自己确认，主机指纹仍然走既有的首次确认。
+    """
+
+    #: 关掉之后界面上不出现扫描入口，服务端也拒绝启动扫描。
+    enabled: bool = True
+    #: 是否对已知虚拟网段里的地址做 TCP 22 探测。关掉就只报告「地址从哪来」。
+    probe_ssh: bool = True
+    #: 单个地址的探测超时（秒）。上限 5 秒：一台有 254 个地址的网段，超时再长
+    #: 就会把一次扫描拖成几分钟。
+    probe_timeout_seconds: float = 1.0
+    max_probe_workers: int = 16
+    max_addresses_per_subnet: int = 254
+    max_probes: int = 512
+    time_budget_seconds: int = 60
+    #: VMware 安装目录。留空表示自动探测（Windows 上读注册表）。
+    vmware_root: str = ""
+    #: VMware 的配置数据目录（放 inventory.vmls）。留空表示自动探测（%APPDATA%\\VMware）。
+    vmware_data_dir: str = ""
+
+
+@dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     ssh: SshConfig = field(default_factory=SshConfig)
+    discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     connections: list[Connection] = field(default_factory=list)
     #: 配置文件自身的绝对路径。
     path: str = ""
@@ -228,6 +278,7 @@ class AppConfig:
                 "session_token_ttl_seconds": self.security.session_token_ttl_seconds,
                 "max_upload_bytes": self.security.max_upload_bytes,
                 "max_download_bytes": self.security.max_download_bytes,
+                "max_edit_bytes": self.security.max_edit_bytes,
                 "log_level": self.security.log_level,
                 "redact_secrets": self.security.redact_secrets,
             },
@@ -239,6 +290,17 @@ class AppConfig:
                 "known_hosts_file": self.ssh.known_hosts_file,
                 "ssh_executable": self.ssh.ssh_executable,
                 "sftp_executable": self.ssh.sftp_executable,
+            },
+            "discovery": {
+                "enabled": self.discovery.enabled,
+                "probe_ssh": self.discovery.probe_ssh,
+                "probe_timeout_seconds": self.discovery.probe_timeout_seconds,
+                "max_probe_workers": self.discovery.max_probe_workers,
+                "max_addresses_per_subnet": self.discovery.max_addresses_per_subnet,
+                "max_probes": self.discovery.max_probes,
+                "time_budget_seconds": self.discovery.time_budget_seconds,
+                "vmware_root": self.discovery.vmware_root,
+                "vmware_data_dir": self.discovery.vmware_data_dir,
             },
             "connections": [c.to_dict() for c in self.connections],
         }
@@ -265,7 +327,7 @@ def _reject_unknown(mapping: dict[str, Any], allowed: frozenset[str], label: str
 
 
 #: 各层允许出现的键。新增配置项时必须同步这里，否则新字段会被自己的校验拒绝。
-_ROOT_KEYS = frozenset({"config_version", "server", "security", "ssh", "connections"})
+_ROOT_KEYS = frozenset({"config_version", "server", "security", "ssh", "discovery", "connections"})
 _SERVER_KEYS = frozenset({"host", "port", "open_browser", "request_timeout_seconds"})
 _SECURITY_KEYS = frozenset({
     "allow_lan", "host_key_policy", "session_token_ttl_seconds",
@@ -274,6 +336,11 @@ _SECURITY_KEYS = frozenset({
 _SSH_KEYS = frozenset({
     "connect_timeout_seconds", "command_timeout_seconds", "keepalive_interval_seconds",
     "max_sessions", "known_hosts_file", "ssh_executable", "sftp_executable",
+})
+_DISCOVERY_KEYS = frozenset({
+    "enabled", "probe_ssh", "probe_timeout_seconds", "max_probe_workers",
+    "max_addresses_per_subnet", "max_probes", "time_budget_seconds",
+    "vmware_root", "vmware_data_dir",
 })
 
 
@@ -364,6 +431,37 @@ def parse_config(data: Any, *, path: str = "") -> AppConfig:
         sftp_executable=_require_str(ssh_raw.get("sftp_executable", ""), "ssh.sftp_executable"),
     )
 
+    discovery_raw = _section(root, "discovery")
+    _reject_unknown(discovery_raw, _DISCOVERY_KEYS, "discovery")
+    discovery = DiscoveryConfig(
+        enabled=_require_bool(discovery_raw.get("enabled", True), "discovery.enabled"),
+        probe_ssh=_require_bool(discovery_raw.get("probe_ssh", True), "discovery.probe_ssh"),
+        # 下限 0.1 秒：0 会让每个地址都立刻超时，扫描结果永远是「无响应」，
+        # 而用户会以为「网段里什么都没有」。上限 5 秒见 DiscoveryConfig 的注释。
+        probe_timeout_seconds=_require_number(
+            discovery_raw.get("probe_timeout_seconds", 1.0),
+            "discovery.probe_timeout_seconds", minimum=0.1, maximum=5.0,
+        ),
+        max_probe_workers=_require_int(
+            discovery_raw.get("max_probe_workers", 16),
+            "discovery.max_probe_workers", minimum=1, maximum=64,
+        ),
+        max_addresses_per_subnet=_require_int(
+            discovery_raw.get("max_addresses_per_subnet", 254),
+            "discovery.max_addresses_per_subnet", minimum=1, maximum=4096,
+        ),
+        max_probes=_require_int(
+            discovery_raw.get("max_probes", 512),
+            "discovery.max_probes", minimum=1, maximum=65536,
+        ),
+        time_budget_seconds=_require_int(
+            discovery_raw.get("time_budget_seconds", 60),
+            "discovery.time_budget_seconds", minimum=1, maximum=3600,
+        ),
+        vmware_root=_require_str(discovery_raw.get("vmware_root", ""), "discovery.vmware_root"),
+        vmware_data_dir=_require_str(discovery_raw.get("vmware_data_dir", ""), "discovery.vmware_data_dir"),
+    )
+
     connections_raw = root.get("connections", [])
     if not isinstance(connections_raw, list):
         raise ConfigError("配置项 connections 必须是数组。", detail=f"实际类型：{type(connections_raw).__name__}")
@@ -380,7 +478,7 @@ def parse_config(data: Any, *, path: str = "") -> AppConfig:
         connections.append(connection)
 
     config = AppConfig(
-        server=server, security=security, ssh=ssh,
+        server=server, security=security, ssh=ssh, discovery=discovery,
         connections=connections, path=path, config_version=version,
     )
     # D-009 在解析阶段就生效：任何入口（main、测试、将来的其它前端）拿到配置时
@@ -441,5 +539,10 @@ def init_config(target_path: str, *, overwrite: bool = False) -> str:
 
 
 def example_config_text() -> str:
-    """`config/config.example.json` 的内容。单元测试用它断言模板与 DEFAULTS 同步。"""
-    return json.dumps(DEFAULTS, ensure_ascii=False, indent=2) + "\n"
+    """磁盘上 `config/config.example.json` 的原文。
+
+    以前这里是 `json.dumps(DEFAULTS)` —— 于是「模板与默认值一致」的单元测试变成了
+    自证：拿 DEFAULTS 生成字符串再和 DEFAULTS 比，模板里少一段也照样绿（阶段五实测
+    发现模板多了一行 `$schema` 时就是这么漏过去的）。读磁盘上的那一份才有意义。
+    """
+    return (project_root() / "config" / "config.example.json").read_text(encoding="utf-8")

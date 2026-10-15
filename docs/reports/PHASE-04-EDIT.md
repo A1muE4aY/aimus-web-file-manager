@@ -112,7 +112,7 @@ e2e             18 用例    0 失败    0 错误    0 跳过   92.34s  OK
 3. **解压目标目录不存在时直接报错**：用户说「解压到这里」而该目录还没建时，原先 `client.stat` 抛 `path_not_found` 就失败。改为只创建最后一级目录（多级路径写错仍然报错，不默默造一串空目录）。
 4. **`gzip_open` 未定义**（`app/services/fileops.py`）：压缩路径写了 `with gzip_open(writer)`，真机冒烟一跑就 `NameError`。改为 `gzip.GzipFile(fileobj=writer, mode="wb", mtime=0)`（`mtime=0` 让同样的输入产出可复现的包）。
 5. **覆盖落位用了不存在的 `overwrite_target`**（`app/services/fileops.py`）：解压覆盖分支写了 `if overwrite_target(...)`。改为「先 `lstat` 判断，目标存在且不是目录就 `client.remove`，再 `rename`」——因为 SFTP v3 的 RENAME 不覆盖已存在目标。
-6. **文件操作的成功提示显示 undefined**（§BT§frontend/assets/js/fileops.js§BT§）：这条**不在本阶段提交里**——它是提交之后做 e2e 截图核对时才看出来的。后端把结果包成 §BT§{"entry": …}§BT§ / §BT§{"deleted": …}§BT§ / §BT§{"archive": …}§BT§ / §BT§{"extract": …}§BT§ 这样的信封，而前端除重命名外都直接读顶层字段，于是屏幕上出现「已删除「undefined」」——远端状态是对的，只有提示是错的（e2e 断言原本只核对远端，所以漏掉了）。修复为统一的 §BT§unwrap(data, key)§BT§：缺键时抛错而不是返回 undefined，§BT§tests/e2e/test_browser_edit.py§BT§ 新增 §BT§wait_for_toast§BT§，断言提示文案里不含 §BT§undefined§BT§。教训：**端到端用例要连界面说了什么一起核对**，只核对远端状态会放过这一类缺陷。
+6. **文件操作的成功提示显示 undefined**（`frontend/assets/js/fileops.js`）：这条**不在本阶段提交里**——它是提交之后做 e2e 截图核对时才看出来的。后端把结果包成 `{"entry": …}` / `{"deleted": …}` / `{"archive": …}` / `{"extract": …}` 这样的信封，而前端除重命名外都直接读顶层字段，于是屏幕上出现「已删除「undefined」」——远端状态是对的，只有提示是错的（e2e 断言原本只核对远端，所以漏掉了）。修复为统一的 `unwrap(data, key)`：缺键时抛错而不是返回 undefined，`tests/e2e/test_browser_edit.py` 新增 `wait_for_toast`，断言提示文案里不含 `undefined`。教训：**端到端用例要连界面说了什么一起核对**，只核对远端状态会放过这一类缺陷。
 
 另有一处**测试基建**缺陷（不是应用缺陷）：内存版 SFTP 假件（`tests/unit/fake_sftp.py`）的 `remove` / `rmdir` 原先会解析符号链接，导致「删除链接」在单测里表现得像删了目标；按 POSIX 语义改为作用于条目本身（`rmdir` 对链接报「不是目录」）。
 

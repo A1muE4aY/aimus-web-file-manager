@@ -1,5 +1,4 @@
 {
-  "$schema": "./config.schema.json",
   "config_version": 1,
   "server": {
     "host": "127.0.0.1",
@@ -25,6 +24,17 @@
     "known_hosts_file": "data/known_hosts",
     "ssh_executable": "",
     "sftp_executable": ""
+  },
+  "discovery": {
+    "enabled": true,
+    "probe_ssh": true,
+    "probe_timeout_seconds": 1.0,
+    "max_probe_workers": 16,
+    "max_addresses_per_subnet": 254,
+    "max_probes": 512,
+    "time_budget_seconds": 60,
+    "vmware_root": "",
+    "vmware_data_dir": ""
   },
   "connections": []
 }

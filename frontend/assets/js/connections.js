@@ -482,8 +482,17 @@ function showHostKeyMismatch(error, item) {
 
 /* ------------------------------------------------------------ 连接表单 */
 
-export function openConnectionForm(existing) {
-  const editing = Boolean(existing);
+/**
+ * 打开「新增 / 编辑连接」表单。
+ *
+ * @param {object|null} existing 已有连接（带 id）表示编辑；**不带 id 的对象会被当成
+ *   「草稿」**：字段照填，保存时仍然是新增。在线虚拟机发现的结果就是这样进来的 ——
+ *   候选地址只预填表单，保存与否由用户决定。
+ * @param {object} [options] options.notice 填表前给用户看的一段说明。
+ */
+export function openConnectionForm(existing, options) {
+  const opts = options || {};
+  const editing = Boolean(existing && existing.id);
   const item = existing || {
     name: "",
     host: "",
@@ -540,6 +549,7 @@ export function openConnectionForm(existing) {
     "div",
     {},
     error,
+    opts.notice ? h("p", { class: "form-notice", text: opts.notice }) : null,
     field("名称", inputName, "留空则自动用「用户名@主机」作为名称。"),
     h(
       "div",

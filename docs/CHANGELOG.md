@@ -13,18 +13,18 @@
 - **版本标识**：`v0.1.0` 是首个版本。六个阶段已全部完成，**已产出便携发行包与 SHA-256 校验和**
   （`dist/SHA256SUMS.txt`，说明见 `docs/RELEASE.md`），但**尚未打 git 标签**、未对外发布。
   打标签后需在此补上标签名与包哈希。
-  `v0.1.1` 正在开发中（阶段一~四已完成，见下节），**尚未打包、尚未打标签**。
+  `v0.1.1` 正在开发中（阶段一~五已完成，见下节），**尚未打包、尚未打标签**。
 - **日期**：ISO `YYYY-MM-DD`。
 - **维护方式**：**人工维护**，不自动生成。变更发生时同步写，而不是发版前一次性补记。
 
 ## [v0.1.1] — 开发中（未发布）
 
 - **版本号**：仍是 `0.1.0`（`app/__init__.py:7`）。阶段六交付时统一改为 `0.1.1` 并重新打包，本轮不提前改号。
-- **状态**：阶段一（修复已有缺陷）、阶段二（优化侧边栏）、阶段三（远端文件检索）、阶段四（远端文本编辑与文件操作）已落地并通过测试；阶段五~六**未开始**。
+- **状态**：阶段一（修复已有缺陷）、阶段二（优化侧边栏）、阶段三（远端文件检索）、阶段四（远端文本编辑与文件操作）、阶段五（在线虚拟机自动发现）已落地并通过测试；阶段六**未开始**。
 - **起始日期**：2026-10-16。
 - **依据**：工作区根目录的任务书 `2.md`（用户提供的第二轮验收要求）。
-- **提交纪律**：阶段一~三的改动共用 `app/api/handlers.py`、`app/core/errors.py` 与前端若干文件，无法拆成互不依赖的提交，因此**合并为一次提交** `6e619f0`（2026-10-16，「阶段 01~03（v0.1.1）：缺陷修复、侧边栏优化、远端文件检索」，43 个文件 / +4768 −60，提交信息里逐阶段列明）；阶段四起每阶段单独提交——阶段四是独立提交 `b2bfc1f`（2026-10-16，「阶段 04（v0.1.1）：远端文本文件编辑与文件操作」，35 个文件 / +6182 −112）。
-- **行号漂移**：本文 v0.1.0 段引用的 `app/api/handlers.py:259-279`（`ENDPOINTS`）与 `:282`（`build_router()`）**已失效**；阶段三一度是 `:294-317` 与 `:320`，阶段四插入六个处理器后现为 **`:434-463` 与 `:466`**。历史条目按当时源码保留，不复改；引用这些位置时以函数名为准。
+- **提交纪律**：阶段一~三的改动共用 `app/api/handlers.py`、`app/core/errors.py` 与前端若干文件，无法拆成互不依赖的提交，因此**合并为一次提交** `6e619f0`（2026-10-16，「阶段 01~03（v0.1.1）：缺陷修复、侧边栏优化、远端文件检索」，43 个文件 / +4768 −60，提交信息里逐阶段列明）；阶段四起每阶段单独提交——阶段四是独立提交 `b2bfc1f`（2026-10-16，「阶段 04（v0.1.1）：远端文本文件编辑与文件操作」，35 个文件 / +6182 −112），随后补了一次收尾提交 `4d69390`；阶段五同样是独立提交 `<提交后回填>`（2026-10-16，「阶段 05（v0.1.1）：在线虚拟机自动发现」）。
+- **行号漂移**：本文 v0.1.0 段引用的 `app/api/handlers.py:259-279`（`ENDPOINTS`）与 `:282`（`build_router()`）**已失效**；阶段三一度是 `:294-317` 与 `:320`，阶段四是 `:434-463` 与 `:466`，阶段五把四个发现端点排到表尾后现为 **`:472-506` 与 `:509`**。历史条目按当时源码保留，不复改；引用这些位置时以函数名为准。
 
 ### 阶段进度（依据任务书 2.md 的六阶段）
 
@@ -34,7 +34,7 @@
 | 二 | 优化侧边栏 | 已完成 | `frontend/assets/css/app.css`、`frontend/assets/js/connections.js`；测试 `tests/e2e/test_browser_sidebar.py` |
 | 三 | 添加远端文件检索 | 已完成 | `app/services/search.py`、`app/api/handlers.py:161`（三个检索端点）、`frontend/assets/js/search.js`、`frontend/index.html:80`/`:88`；测试 unit 36 项 / integration 15 项 / security 18 项 / e2e 4 项；接口文档 `docs/API.md` §5.20–5.22；手册第 9 章（阶段四插入新第 8 章后顺延，原第 8 章）；阶段报告 `docs/reports/PHASE-03-SEARCH.md` |
 | 四 | 远端文本编辑与文件操作 | 已完成 | `app/services/editor.py`、`app/services/fileops.py`、6 个新端点（编号第 23~28，`app/api/handlers.py:434-463`）、配置键 `security.max_edit_bytes`、`EditConflict`（`app/core/errors.py:210`）；前端 `frontend/assets/js/edit.js`/`fileops.js` 与文件列表「操作」列；测试 unit 103 项（本阶段新增：`tests/unit/test_editor.py` 43 + `tests/unit/test_fileops.py` 60，配套内存版 SFTP 假件 `tests/unit/fake_sftp.py`）/ integration 61 项 / security 12 项 / e2e 5 项；四层合计 636 项 0 失败 0 跳过；接口文档 `docs/API.md` §5.23–5.28；手册第 8 章；阶段报告 `docs/reports/PHASE-04-EDIT.md` |
-| 五 | 自动发现在线虚拟机 | 未开始 | — |
+| 五 | 自动发现在线虚拟机 | 已完成 | `app/services/discovery.py`、4 个发现端点（编号第 29~32，`app/api/handlers.py:472-506`）、配置段 `discovery`（9 个键）、`DiscoveryBusy`（`app/core/errors.py:225`）；前端 `frontend/assets/js/discovery.js` 与侧栏「扫描」入口；测试 unit 49 项 / integration 10 项 / security 11 项 / e2e 4 项（本阶段新增 74 项），四层合计 717 项 0 失败 0 跳过；接口文档 `docs/API.md` §5.29–5.32 与 §7.4；手册 §4.4 与 §10.2 的 discovery 段；阶段报告 `docs/reports/PHASE-05-DISCOVERY.md` |
 | 六 | 回归、CU 验收与交付 | 未开始 | — |
 
 ### 新增
@@ -53,6 +53,16 @@
   - 服务层 `app/services/fileops.py`：重命名（同名 / 目标已存在 / 非法名 / 根目录都拒绝）、删除（非空目录必须显式 `recursive=true`，递归受 10000 条目与 64 层深度上限约束）、压缩成 **.tar.gz**（GNU tar + gzip，保留权限与 mtime，**符号链接以链接本身入包**，条目上限 10000、原始字节上限 512 MiB）、解压（支持 `.tar.gz` / `.tgz` / `.tar` / `.zip`，目标目录不存在时只创建最后一级；远端已存在同名文件默认跳过并列出，`overwrite=true` 才覆盖；条目数或解出字节数触顶时停止并记入 `stopped`，已解出的部分保留）。
   - 压缩与解压**全部在本机进程内流式完成**（标准库 tarfile / gzip / zipfile + SFTP 读写），远端不执行任何命令。
   - 前端 `frontend/assets/js/fileops.js`（重命名 / 删除 / 压缩 / 解压四个对话框，删除对非空目录会二次确认）、文件列表新增「操作」列（`frontend/assets/js/files.js` 的 `actionCell`）、工具栏「编辑」按钮、`frontend/index.html` 与 `frontend/assets/css/app.css`；预览窗口增加「编辑」入口并标明预览只读。
+- **在线虚拟机自动发现**（阶段五）：4 个新端点，编号第 29~32（`app/api/handlers.py:472-506`）——`GET /api/discovery`（环境概览：能读到什么、上限是多少，不读大文件也不探测）、`POST /api/discovery/scan`（**202** + 快照，后台线程里跑）、`GET /api/discovery/scans/{scan_id}`（轮询进度与结果）、`DELETE` 同路径（幂等中止）。发现端点**不挂在任何连接之下**，也不需要已连接。
+  - 服务层 `app/services/discovery.py`：**五层取材**——VMware 清单（`inventory.vmls`）、`vmrun list`（运行状态，是**可选依赖**：缺了只把状态标成「未知」，而不是当成「已关机」）、虚拟机的 `.vmx`（名称 / 客户机类型 / 网卡 MAC）、`vmnetdhcp.conf` 与 `vmnetdhcp.leases`（虚拟网段与地址历史）、系统邻居表（`Get-NetNeighbor`，失败时回退 `arp -a`）；装了 VMware Tools 时还会用 `vmrun getGuestIPAddress` 问客户机自报的地址（实测 487 ms，超时 5 秒）。
+  - **三种状态分开建模**：发现虚拟机（清单与 `.vmx` 里有的台数）/ 地址在线（`answer_state` 为 `online` 或 `ssh_open`）/ SSH 可用（`ssh_open`）。虚拟机级的 `ssh_open` 是布尔值或 `null`——`null` 表示「一个地址都没探测过」，**不是**「确定连不上」；地址级 `ssh_state` 保留探测的原始结论（`open` / `refused` / `timeout` / `unreachable` / `not_probed` / `error`）。
+  - **有上限的探测**：只探 `vmnetdhcp.conf` 声明过的虚拟网段、只探 22 端口、每个地址一次 TCP 连接（默认 1 秒）、每网段不超过 `max_addresses_per_subnet`、整轮不超过 `max_probes`、总时长不超过 `time_budget_seconds`；碰到上限记 `truncated` 与 `truncated_reason`，用户中止记 `interrupted`（两者可能同时为真）。
+  - **结果只是候选**：不写连接表、不自动信任主机指纹、不建立 SSH 会话（「SSH 可用」是直接对 22 端口试出来的，没有登录）、不执行任何远端命令，也不修改 VMware 的任何文件（安全层逐字节比对）。
+  - 新增配置段 `discovery`（9 个键：`enabled` / `probe_ssh` / `probe_timeout_seconds` / `max_probe_workers` / `max_addresses_per_subnet` / `max_probes` / `time_budget_seconds` / `vmware_root` / `vmware_data_dir`，见 `app/core/config.py` 的 `DEFAULTS` / `DiscoveryConfig` / `_DISCOVERY_KEYS` / `parse_config` 四处，以及 `config/config.example.json`）。
+  - 错误模型新增 `DiscoveryBusy`（`code=discovery_busy`，HTTP 409，`app/core/errors.py:225`）：同一时刻只允许一个扫描，第二次请求返回 409 并提示先等它结束或点「中止」。
+  - 前端：`frontend/assets/js/discovery.js`（侧栏「扫描」入口、六个来源的状态表、阶段与进度、中止、结果表按三态分列、每行「创建连接」）、`frontend/assets/js/api.js` 新增四个方法、`frontend/index.html` 的 `#btn-scan-vms` 与 `frontend/assets/css/app.css` 的新样式；`frontend/assets/js/connections.js` 的 `openConnectionForm(existing, options)` 支持「草稿预填 + 提示语」，因此从结果里点「创建连接」走的是**新增**分支而不是编辑分支。
+  - 本机实测（VMware Workstation 26 + CentOS Stream 10）：3 台虚拟机（其中 1 台正在运行）、探测 3/3 个地址、1 个地址 SSH 可用，整轮 4.2~5.1 秒。
+
 
 ### 变更
 
@@ -63,6 +73,10 @@
 - 仓库清理：v0.1.0 某脚本按字面量创建的 `%SystemDrive%` 目录（内含 `ProgramData/Microsoft/Windows/Caches/*.db`，0.94 MB）移入 `.archive/junk/percent-systemdrive-2026-10-16/`。
 - `docs/API.md` 扩到 **28 个端点**并新增 §5.23–5.28（读 / 写文本、重命名、删除、压缩、解压），同时重核了全文引用的源码行号，并声明「行号按本文日期的工作树核对，v0.1.1 插端点会让旧行号漂移，引用时以函数名为准」；`docs/USER_GUIDE.md` 新增第 8 章「在线编辑与文件操作」，原第 8~13 章顺延为第 9~14 章（`docs/USER_GUIDE.md:388` 起）。
 - 上传接口的既有语义**保持不变**：仍然只有「上传 / 覆盖」，覆盖仍然直接截断写入（见「已知限制」）。
+- `docs/API.md` 扩到 **32 个端点**并新增 §5.29–5.32（发现的环境概览 / 发起扫描 / 轮询 / 幂等中止）与 §7.4（发现读什么、不读什么）；错误码表补 `discovery_busy` 一行，并修正被 `DiscoveryBusy` 插入顶下去的两个行号（`internal_error` → `errors.py:241`、`timeout` → `errors.py:236`）。`docs/USER_GUIDE.md` 新增 §4.4「不填地址：让工具去虚拟机网络里找一台」与 §10.2 的 discovery 段字段表（**不新开一章**，避免第 9~14 章整体顺延）。
+- 四个发现端点排在 `ENDPOINTS` 表的**最后**（发现级与具体连接无关），让 API 文档的端点编号保持「只增不改」：20~22 检索、23~28 编辑与文件操作、29~32 发现。已入库文档里按编号引用的 6 处因此无需改动。
+- 扫描结束（含用户中止）时把 `stage` 明确收成 `done`，避免「阶段」这一列在扫描结束后停在上一个动作上像是卡住了；失败时保留当时那一步，好看出卡在哪里（`app/services/discovery.py` 的 `Discovery._run`）。
+- `config/config.example.json` 删掉了 `$schema` 一行，使模板与 `DEFAULTS` 逐字段相等（原因见「修复」第一条）。
 
 ### 修复
 
@@ -74,7 +88,10 @@
 - **破坏性操作会跟着符号链接走**（阶段四写单元测试时发现，属真实缺陷）：原先删除 / 重命名 / 压缩都先把路径整条 `realpath`，于是「删除一个指向 `/home/aimu/real.txt` 的链接」实际删掉了 `real.txt`。修复为只对**父目录**做 `realpath`、最后一段不解析（`app/services/fileops.py` 的 `_canonical_entry_path`），并补了三条回归：改链接名不动目标、删链接保留目标、`链接以链接身份进包`。
 - 在线编辑保存曾经默认用 LF 写回，会把 CRLF 文件悄悄改成 LF；改为**默认沿用文件原有的换行风格**（`app/services/editor.py` 的 `save_text_file`，并新增只读头部的 `_peek` 用于探测风格）。
 - 解压目标目录不存在时原先直接报错，改为**创建最后一级**（只建一级；多级路径写错仍然报错，不静默造出一串空目录）。
-- **文件操作与保存后的成功提示显示 undefined**（阶段四收尾做 e2e 截图核对时发现，属真实缺陷）：后端把结果包成 §BT§{"entry": …}§BT§ / §BT§{"deleted": …}§BT§ / §BT§{"archive": …}§BT§ / §BT§{"extract": …}§BT§ 这样的信封，而 §BT§frontend/assets/js/fileops.js§BT§ 里除重命名外都直接读顶层字段，于是屏幕上出现「已删除「undefined」」——远端状态是对的，只有提示是错的（e2e 原本只核对远端，所以漏掉了）。修复为统一的 §BT§unwrap(data, key)§BT§：缺键时**抛错**而不是返回 undefined，§BT§tests/e2e/test_browser_edit.py§BT§ 新增 §BT§wait_for_toast§BT§ 断言提示文案里不含 §BT§undefined§BT§。
+- **文件操作与保存后的成功提示显示 undefined**（阶段四收尾做 e2e 截图核对时发现，属真实缺陷）：后端把结果包成 `{"entry": …}` / `{"deleted": …}` / `{"archive": …}` / `{"extract": …}` 这样的信封，而 `frontend/assets/js/fileops.js` 里除重命名外都直接读顶层字段，于是屏幕上出现「已删除「undefined」」——远端状态是对的，只有提示是错的（e2e 原本只核对远端，所以漏掉了）。修复为统一的 `unwrap(data, key)`：缺键时**抛错**而不是返回 undefined，`tests/e2e/test_browser_edit.py` 新增 `wait_for_toast` 断言提示文案里不含 `undefined`。
+- **随包发布的配置模板根本加载不了**（阶段五写配置测试时发现，属真实缺陷）：`config/config.example.json` 第 2 行写着 `"$schema": "./config.schema.json"`，而 `config/` 下**没有**这个文件、全仓库也没有第二处引用；`parse_config` 又会因未知根字段直接抛 `ConfigError`（「配置里含无法识别的字段」），于是「照抄随包模板」的结果是程序启动不了。修复为删掉该行（模板现与 `DEFAULTS` 逐字段相等），并把 `example_config_text()` 由 `json.dumps(DEFAULTS)` 改为**真的读磁盘模板**（`app/core/config.py`）；同时新增两条单元测试：模板能被 `parse_config` 加载、模板与 `DEFAULTS` 相等。原先那条断言比的是「自己刚生成的字符串」，模板少一整段也照样通过，属于自证。
+- **用户自定义的 `security.max_edit_bytes` 会被静默丢掉**（阶段五补 `discovery` 段时发现，属真实缺陷）：`AppConfig.to_dict()` 的 `security` 段漏了这个键，而连接管理每次增删改连接都会 `save_config()`，于是用户把它调大之后，只要在界面上动一次连接，设置就被写回默认的 2 MiB。修复为在 `to_dict()` 里补上（`app/core/config.py`），并加了一条 `parse_config(to_dict())` 的往返用例（自定义值 123456 与 `discovery.max_probes=64` 都不丢）。
+- **本机虚拟网卡与网关地址既是候选又永远不会被探测**（阶段五读代码时发现，属真实缺陷）：`app/services/discovery.py` 的 `targets` 已经排除了它们，但「其它地址」列表没有排除，于是 `192.168.170.1`/`.2` 这类地址会出现在结果里永远标着「未探测」；而那句解释「本机虚拟网卡与网关地址不做探测。」写在 `if host_addresses & set(targets)` 里——这个条件恒为假，**是一句永远不会出现的死代码**。修复为在「其它地址」循环里就跳过并单独计数，让说明真的会出现在 `notes` 里（「邻居表里有 N 条是本机虚拟网卡或网关的地址，已跳过（它们不是待连接的机器）。」；本机实测 N=1，与既有的「过滤 172 条」相加仍是 173，没有重复计数）。
 
 ### 安全
 
@@ -84,17 +101,19 @@
 - 阶段四的六个新写入口（保存 / 重命名 / 删除 / 压缩 / 解压）每一个都在服务层第一句查写权限，**界面按钮状态不作数**：`tests/security/test_edit_paths.py` 在撤权连接上打这 5 个入口，全部 401，事后核对远端没有新增任何文件。
 - 解压的成员路径校验（`app/services/fileops.py` 的 `_member_target`）：绝对路径、`..` 段、NUL、以反斜杠充当分隔符的写法一律**整包拒绝**（不是悄悄跳过）；符号链接与硬链接条目跳过并计入 `skipped`。集成与安全两层都用真实构造的越界 tar/zip 验证过：拒绝后 /tmp 与夹具根都没有 `evil.txt`，且随后一个正常归档仍能解压。
 - 在线编辑不做「猜测式解码」：编码不是 UTF-8 就直接拒绝，并在 `detail` 里给出解码失败的字节偏移，**不静默改写用户内容**。
+- 阶段五的发现端点做了对抗性验证（`tests/security/test_discovery_paths.py`，11 项）：四个端点无令牌一律 401；畸形扫描 id 一律 404；探测只落在已知虚拟网段内、且只探 **22 端口**；本机虚拟网卡与网关地址既不进候选也不被探测；`discovery.probe_ssh=false` 时一个包都不发；`max_probes=1` 是真上限；扫描前后 VMware 的清单、`vmnetdhcp.conf`、`vmnetdhcp.leases` **内容逐字节不变**（只允许 VMware 自己的 DHCP 服务往租约文件追加，判据是旧内容是新内容的前缀）；扫描前后 `ssh.exe` 进程数不变（验收项 T-013 的同类要求）；扫描不往连接表里加任何东西——结果只是候选。
 
 ### 已知限制
 
-- 阶段五~六未开始：**没有**在线虚拟机发现，CU 验收与 v0.1.1 打包也未执行。
+- 阶段六未开始：CU 验收与 v0.1.1 打包**尚未执行**（阶段五的在线虚拟机发现已落地，见上）。
 - 文件操作**仍然没有**：新建目录、修改权限、复制 / 移动、打包下载、多选批量操作；压缩格式固定 `.tar.gz`（解压额外支持 `.tgz` / `.tar` / `.zip`）。
 - 在线编辑只支持 **UTF-8** 文本（含或不含 BOM），单文件上限 `security.max_edit_bytes`（默认 2 MiB）；不做编码转换，不提供十六进制视图或行尾转换开关。
 - 没有版本历史与撤销：删除、覆盖上传、保存都不可回退（远端回收站不在本项目范围内）；编辑器内容只在浏览器内存里，刷新页面即丢。
 - 检索上限与压缩 / 解压上限都是常量，暂不可配置；检索不跟随符号链接、不搜文件内容、不支持通配符与正则。
 - 覆盖上传中途取消仍会留下不完整的文件（SFTP v3 的 RENAME 不能替换已存在目标），在线编辑保存则走「临时名 + 改名 + 备份回滚」，不受此影响。
 - 版本号仍是 `0.1.0`，便携发行包与校验和仍是 v0.1.0 的那一份，未重新构建。
-- 阶段六要求的真实桌面 CU 验收**尚未执行**：阶段一~四的证据来自单元 / 集成 / 安全 / 无头 Edge e2e 测试，都不等同于 CU 验收。
+- 在线虚拟机发现只认**本机装好的 VMware Workstation**（清单、`vmrun`、`vmnetdhcp.*`）：不认 VirtualBox、Hyper-V，也不认远程 ESXi。邻居表只有 Windows 读得到（其它平台该来源标 `unavailable`，地址只能来自租约与清单）；非管理员读不到 VMware 进程的命令行，运行状态由 `vmrun` 决定，`vmrun` 也读不到时虚拟机状态是「未知」而**不是**「已关机」。它只判断 22 端口通不通，不识别机器上跑了别的什么服务，也不区分「机器没开」与「防火墙拦了」。
+- 阶段六要求的真实桌面 CU 验收**尚未执行**：阶段一~五的证据来自单元 / 集成 / 安全 / 无头 Edge e2e 测试，都不等同于 CU 验收。
 
 ---
 

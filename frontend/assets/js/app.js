@@ -15,6 +15,7 @@ import * as transfer from "./transfer.js";
 import * as search from "./search.js";
 import * as edit from "./edit.js";
 import * as fileops from "./fileops.js";
+import * as discovery from "./discovery.js";
 import { openPreview } from "./preview.js";
 import { state, activeConnection, allowWrite, isConnected, connectionById } from "./state.js";
 
@@ -93,6 +94,20 @@ function handleEdit(entry) {
   edit.openEditor(entry);
 }
 
+/**
+ * 扫描结果里的「创建连接」：只把地址填进表单，不保存也不连接。
+ *
+ * 发现出来的地址是候选，所以表单里要明说一遍来源；保存之后仍然要用户点「连接」、
+ * 并且先核对主机指纹 —— 这条链路上没有任何一步是自动的。
+ */
+function handleCreateConnection(draft) {
+  connections.openConnectionForm(draft, {
+    notice:
+      "以下内容来自「扫描本机虚拟机」的结果，只是候选地址：请核对后再保存；" +
+      "保存后点「连接」时仍会先让你确认主机指纹。",
+  });
+}
+
 function handleRename(entry) {
   fileops.renameEntry(entry);
 }
@@ -166,6 +181,7 @@ function showHelp() {
       "选中文本文件后点「编辑」可以在线修改并保存；保存前会核对文件有没有被别人改过，有冲突时不会覆盖别人的内容。",
       "「操作」列里可以重命名、压缩成 .tar.gz、解压与删除条目；这些按钮要先打开「允许写操作」。",
       "在搜索框里输入名称回车，会在当前目录及其子目录里递归找文件名；结果里点「定位」直接跳到那个目录。",
+      "侧栏的「扫描」会读本机 VMware 的清单、虚拟机配置、DHCP 租约与系统邻居表，再对已知虚拟网段里的一小批地址各做一次 SSH 端口探测；结果里的「创建连接」只是把地址填进表单，连不连由你决定。",
       "顶部路径条可以点任意一级直接跳回去。",
       "「允许写操作」默认关闭；打开后才可以上传与覆盖远端文件。",
     ])
@@ -234,6 +250,7 @@ async function boot() {
   $("#app").hidden = false;
   bindHandlers();
   connections.initConnections({ onEnter: enterConnection, onLeave: leaveConnection });
+  discovery.initDiscovery({ onCreateConnection: handleCreateConnection });
   files.initFiles({
     onSelectionChange: updateToolbar,
     onOpenFile: handleOpenFile,

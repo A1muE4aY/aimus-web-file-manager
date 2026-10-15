@@ -15,10 +15,23 @@ def base_data():
 
 
 class DefaultsTests(unittest.TestCase):
-    def test_defaults_match_example_file(self):
-        # 模板文件与内置默认值必须一致，否则「照抄模板」与「不写配置」会得到两种行为。
-        text = cfg.example_config_text()
-        self.assertEqual(json.loads(text), cfg.DEFAULTS)
+    #: 随包发布的模板。用户「照抄一份改字段」是常规操作，所以它既要比默认值一致，
+    #: 也要真的能通过解析 —— 多出一个键，照抄的人就直接启动不了。
+    EXAMPLE_PATH = cfg.project_root() / "config" / "config.example.json"
+
+    def test_defaults_match_example_file_on_disk(self):
+        # 读磁盘上的模板真比对。以前这条比的是 example_config_text() 自己刚生成的
+        # 字符串，模板少一整段也照样通过（自己证自己）。
+        on_disk = json.loads(self.EXAMPLE_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(on_disk, cfg.DEFAULTS)
+
+    def test_example_file_can_be_loaded(self):
+        data = json.loads(self.EXAMPLE_PATH.read_text(encoding="utf-8"))
+        config = cfg.parse_config(data, path=str(self.EXAMPLE_PATH))
+        self.assertTrue(config.discovery.enabled)
+
+    def test_example_config_text_is_that_file(self):
+        self.assertEqual(cfg.example_config_text(), self.EXAMPLE_PATH.read_text(encoding="utf-8"))
 
     def test_defaults_bind_loopback(self):
         config = cfg.parse_config(base_data())
@@ -249,6 +262,63 @@ class LoadTests(unittest.TestCase):
         result = cfg.init_config(str(path))
         self.assertTrue(Path(result).is_file())
         cfg.load_config(path)
+
+
+class DiscoveryConfigTests(unittest.TestCase):
+    """在线虚拟机发现那一段（v0.1.1 阶段五）。
+
+    它的每个上限都会变成真实的探测行为，所以取值范围要在这里钉死；另外这一段
+    每次写配置都会跟着走一趟 to_dict，不能丢。
+    """
+
+    def test_defaults_stay_gentle(self):
+        config = cfg.parse_config(base_data())
+        self.assertTrue(config.discovery.enabled)
+        self.assertTrue(config.discovery.probe_ssh)
+        self.assertEqual(config.discovery.probe_timeout_seconds, 1.0)
+        self.assertEqual(config.discovery.max_probes, 512)
+
+    def test_limits_are_range_checked(self):
+        for key, value in (
+            ("probe_timeout_seconds", 0.05),
+            ("probe_timeout_seconds", 5.5),
+            ("max_probe_workers", 0),
+            ("max_probe_workers", 65),
+            ("max_addresses_per_subnet", 4097),
+            ("max_probes", 0),
+            ("max_probes", 65537),
+            ("time_budget_seconds", 0),
+        ):
+            data = base_data()
+            data["discovery"][key] = value
+            with self.assertRaises(ConfigError, msg=f"{key}={value}"):
+                cfg.parse_config(data)
+
+    def test_switches_must_be_booleans(self):
+        for key in ("enabled", "probe_ssh"):
+            data = base_data()
+            data["discovery"][key] = "yes"
+            with self.assertRaises(ConfigError, msg=key):
+                cfg.parse_config(data)
+
+    def test_custom_vmware_paths_are_kept(self):
+        data = base_data()
+        data["discovery"]["vmware_root"] = "D:\\VMware"
+        data["discovery"]["vmware_data_dir"] = "D:\\ProgramData\\VMware"
+        config = cfg.parse_config(data)
+        self.assertEqual(config.discovery.vmware_root, "D:\\VMware")
+        self.assertEqual(config.discovery.vmware_data_dir, "D:\\ProgramData\\VMware")
+
+    def test_round_trip_keeps_every_value(self):
+        """to_dict 走一趟不能丢字段：连接管理器每次增删改连接都会写一遍配置。"""
+        data = base_data()
+        data["security"]["max_edit_bytes"] = 123456
+        data["discovery"]["max_probes"] = 64
+        config = cfg.parse_config(data)
+        again = cfg.parse_config(config.to_dict())
+        self.assertEqual(again.security.max_edit_bytes, 123456, "security.max_edit_bytes 曾经在这一步被静默丢掉")
+        self.assertEqual(again.discovery.max_probes, 64)
+        self.assertEqual(again.to_dict(), config.to_dict())
 
 
 if __name__ == "__main__":
