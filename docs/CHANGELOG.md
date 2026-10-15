@@ -23,7 +23,7 @@
 - **状态**：阶段一（修复已有缺陷）、阶段二（优化侧边栏）、阶段三（远端文件检索）、阶段四（远端文本编辑与文件操作）已落地并通过测试；阶段五~六**未开始**。
 - **起始日期**：2026-10-16。
 - **依据**：工作区根目录的任务书 `2.md`（用户提供的第二轮验收要求）。
-- **提交纪律**：阶段一~三的改动共用 `app/api/handlers.py`、`app/core/errors.py` 与前端若干文件，无法拆成互不依赖的提交，因此**合并为一次提交** `6e619f0`（2026-10-16，「阶段 01~03（v0.1.1）：缺陷修复、侧边栏优化、远端文件检索」，43 个文件 / +4768 −60，提交信息里逐阶段列明）；阶段四起每阶段单独提交。
+- **提交纪律**：阶段一~三的改动共用 `app/api/handlers.py`、`app/core/errors.py` 与前端若干文件，无法拆成互不依赖的提交，因此**合并为一次提交** `6e619f0`（2026-10-16，「阶段 01~03（v0.1.1）：缺陷修复、侧边栏优化、远端文件检索」，43 个文件 / +4768 −60，提交信息里逐阶段列明）；阶段四起每阶段单独提交——阶段四是独立提交 `b2bfc1f`（2026-10-16，「阶段 04（v0.1.1）：远端文本文件编辑与文件操作」，35 个文件 / +6182 −112）。
 - **行号漂移**：本文 v0.1.0 段引用的 `app/api/handlers.py:259-279`（`ENDPOINTS`）与 `:282`（`build_router()`）**已失效**；阶段三一度是 `:294-317` 与 `:320`，阶段四插入六个处理器后现为 **`:434-463` 与 `:466`**。历史条目按当时源码保留，不复改；引用这些位置时以函数名为准。
 
 ### 阶段进度（依据任务书 2.md 的六阶段）
@@ -32,8 +32,8 @@
 | --- | --- | --- | --- |
 | 一 | 修复已有缺陷 | 已完成 | 写权限热同步、陈旧列表标记与重试入口、新建连接不再打回占位页；测试 `tests/unit/test_permission_sync.py`、`tests/integration/test_write_permission_sync.py`、`tests/security/test_write_permission_paths.py`、`tests/e2e/test_browser_regressions.py` |
 | 二 | 优化侧边栏 | 已完成 | `frontend/assets/css/app.css`、`frontend/assets/js/connections.js`；测试 `tests/e2e/test_browser_sidebar.py` |
-| 三 | 添加远端文件检索 | 已完成 | `app/services/search.py`、`app/api/handlers.py:161`（三个检索端点）、`frontend/assets/js/search.js`、`frontend/index.html:80`/`:88`；测试 unit 36 项 / integration 15 项 / security 18 项 / e2e 4 项；接口文档 `docs/API.md` §5.20–5.22；手册第 8 章；阶段报告 `docs/reports/PHASE-03-SEARCH.md` |
-| 四 | 远端文本编辑与文件操作 | 已完成 | `app/services/editor.py`、`app/services/fileops.py`、6 个新端点（编号第 23~28，`app/api/handlers.py:434-463`）、配置键 `security.max_edit_bytes`、`EditConflict`（`app/core/errors.py:210`）；前端 `frontend/assets/js/edit.js`/`fileops.js` 与文件列表「操作」列；测试 unit 129 项（`test_editor.py` 43 + `test_fileops.py` 60 + 内存版 SFTP 假件 `tests/unit/fake_sftp.py`）/ integration 61 项 / security 12 项 / e2e 5 项；接口文档 `docs/API.md` §5.23–5.28；手册第 8 章；阶段报告 `docs/reports/PHASE-04-EDIT.md` |
+| 三 | 添加远端文件检索 | 已完成 | `app/services/search.py`、`app/api/handlers.py:161`（三个检索端点）、`frontend/assets/js/search.js`、`frontend/index.html:80`/`:88`；测试 unit 36 项 / integration 15 项 / security 18 项 / e2e 4 项；接口文档 `docs/API.md` §5.20–5.22；手册第 9 章（阶段四插入新第 8 章后顺延，原第 8 章）；阶段报告 `docs/reports/PHASE-03-SEARCH.md` |
+| 四 | 远端文本编辑与文件操作 | 已完成 | `app/services/editor.py`、`app/services/fileops.py`、6 个新端点（编号第 23~28，`app/api/handlers.py:434-463`）、配置键 `security.max_edit_bytes`、`EditConflict`（`app/core/errors.py:210`）；前端 `frontend/assets/js/edit.js`/`fileops.js` 与文件列表「操作」列；测试 unit 103 项（本阶段新增：`tests/unit/test_editor.py` 43 + `tests/unit/test_fileops.py` 60，配套内存版 SFTP 假件 `tests/unit/fake_sftp.py`）/ integration 61 项 / security 12 项 / e2e 5 项；四层合计 636 项 0 失败 0 跳过；接口文档 `docs/API.md` §5.23–5.28；手册第 8 章；阶段报告 `docs/reports/PHASE-04-EDIT.md` |
 | 五 | 自动发现在线虚拟机 | 未开始 | — |
 | 六 | 回归、CU 验收与交付 | 未开始 | — |
 
