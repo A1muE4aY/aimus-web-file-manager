@@ -190,6 +190,17 @@ class ProtocolError(AwfmError):
     http_status = 502
 
 
+class SearchBusy(AwfmError):
+    """同一条连接上已经有一个正在进行的搜索。
+
+    搜索要逐目录走 SFTP，多条并行会把通道占满、连累同一条连接上的浏览与传输，
+    所以这里**拒绝**而不是排队 —— 拒绝是可以解释的，排队只会让用户以为卡住了。
+    """
+
+    code = "search_busy"
+    http_status = 409
+
+
 class OperationTimeout(AwfmError):
     code = "timeout"
     http_status = 504

@@ -15,7 +15,7 @@ from app.api.request import ApiRequest
 from app.api.responses import begin_stream, send_ok
 from app.core.errors import AwfmError, Unauthorized, ValidationError
 from app.models.connection import Connection
-from app.services import filesystem, transfer
+from app.services import filesystem, search as search_service, transfer
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,7 @@ def update_connection(ctx, req: ApiRequest, connection_id: str) -> None:
 
 
 def delete_connection(ctx, req: ApiRequest, connection_id: str) -> None:
+    ctx.searches.cancel_for_connection(connection_id)
     result = ctx.manager.delete_connection(connection_id)
     send_ok(req.handler, {"deleted": result})
 
@@ -98,6 +99,9 @@ def connect(ctx, req: ApiRequest, connection_id: str) -> None:
 
 
 def disconnect(ctx, req: ApiRequest, connection_id: str) -> None:
+    # 断开之前先停掉这条连接上还在跑的搜索：否则工作线程会一直撞在
+    # 「连接未建立」上，用户看到的失败原因也不是他刚做的那个动作。
+    ctx.searches.cancel_for_connection(connection_id)
     result = ctx.manager.disconnect(connection_id)
     send_ok(req.handler, {"connection": result})
 
@@ -149,6 +153,37 @@ def preview_file(ctx, req: ApiRequest, connection_id: str) -> None:
     max_bytes = req.query_int("max_bytes", filesystem.DEFAULT_PREVIEW_BYTES)
     max_bytes = max(1, min(max_bytes, filesystem.DEFAULT_PREVIEW_BYTES))
     send_ok(req.handler, filesystem.read_text_preview(session, path, max_bytes=max_bytes))
+
+
+# --------------------------------------------------------------------- 文件检索
+
+
+def start_search(ctx, req: ApiRequest, connection_id: str) -> None:
+    """在当前目录及其子目录里按名称检索。
+
+    搜索在服务端后台线程里跑（见 app/services/search.py），这里立刻返回初始快照，
+    前端按 `GET /api/searches/<id>` 轮询进度。用 202 表示「已受理、尚未完成」。
+    """
+    payload = req.json()
+    path = payload.get("path")
+    query = payload.get("query")
+    # 形状检查放在找会话之前：参数缺胳膊少腿是调用方自己的问题，不该先去看连接
+    # 状态 —— 否则同一个畸形请求会在「没连接」和「有连接」时给出两个不同的错误。
+    if not isinstance(path, str) or not path:
+        raise ValidationError("缺少 path。")
+    if not isinstance(query, str) or not query:
+        raise ValidationError("缺少 query。")
+    session = _session(ctx, connection_id)
+    started = ctx.searches.start(session, path=path, query=query)
+    send_ok(req.handler, {"search": started.snapshot()}, status=202)
+
+
+def search_status(ctx, req: ApiRequest, search_id: str) -> None:
+    send_ok(req.handler, {"search": ctx.searches.snapshot(search_id)})
+
+
+def cancel_search(ctx, req: ApiRequest, search_id: str) -> None:
+    send_ok(req.handler, {"search": ctx.searches.cancel(search_id)})
 
 
 # --------------------------------------------------------------------- 传输
@@ -276,6 +311,9 @@ ENDPOINTS: list[tuple[str, str, Any]] = [
     ("GET", r"/api/connections/(?P<connection_id>[^/]+)/download", download_file),
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/upload", upload_file),
     ("GET", r"/api/connections/(?P<connection_id>[^/]+)/upload-check", check_upload),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/search", start_search),
+    ("GET", r"/api/searches/(?P<search_id>[0-9a-f]+)", search_status),
+    ("DELETE", r"/api/searches/(?P<search_id>[0-9a-f]+)", cancel_search),
 ]
 
 

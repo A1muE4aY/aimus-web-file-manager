@@ -182,12 +182,16 @@ def require_write_permission(session: RemoteSession, what: str) -> None:
     规划文档 §3.2 要求建目录/重命名/删除这类高风险操作在只读浏览稳定后单独设计，
     并加二次确认。这里是最内层的一道：即使上层漏了，未开启 `allow_write` 的连接
     依然写不动。
+
+    判定读的是会话**当前绑定**的配置（配置变更时由 ConnectionManager 重新绑定），
+    所以每一次写操作都在重新校验，而不是复用建连那一刻的结论。
     """
-    if not session.connection.allow_write:
+    connection = session.connection
+    if not connection.allow_write:
         raise Unauthorized(
             f"该连接未开启写权限，无法{what}。",
             detail="请在连接配置中显式勾选「允许写操作」后重试。",
-            extra={"connection_id": session.connection.id},
+            extra={"connection_id": connection.id},
         )
 
 

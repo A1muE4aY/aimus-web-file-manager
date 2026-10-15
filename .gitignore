@@ -8,6 +8,7 @@ data/
 logs/
 .temp/
 dist/
+.archive/
 
 # --- Secrets (never commit a real key, cert or password file) ---
 *.pem
@@ -20,6 +21,9 @@ known_hosts
 known_hosts.old
 !config/config.example.json
 !tests/fixtures/**/known_hosts*
+
+# --- Test artifacts: e2e 截图按运行生成，不逐张入库 ---
+tests/e2e/artifacts/*.png
 
 # --- Logs / dumps that must not leak into the repo ---
 *.log

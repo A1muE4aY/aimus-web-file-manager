@@ -13,8 +13,66 @@
 - **版本标识**：`v0.1.0` 是首个版本。六个阶段已全部完成，**已产出便携发行包与 SHA-256 校验和**
   （`dist/SHA256SUMS.txt`，说明见 `docs/RELEASE.md`），但**尚未打 git 标签**、未对外发布。
   打标签后需在此补上标签名与包哈希。
+  `v0.1.1` 正在开发中（阶段一~三已完成，见下节），**尚未打包、尚未打标签**。
 - **日期**：ISO `YYYY-MM-DD`。
 - **维护方式**：**人工维护**，不自动生成。变更发生时同步写，而不是发版前一次性补记。
+
+## [v0.1.1] — 开发中（未发布）
+
+- **版本号**：仍是 `0.1.0`（`app/__init__.py:7`）。阶段六交付时统一改为 `0.1.1` 并重新打包，本轮不提前改号。
+- **状态**：阶段一（修复已有缺陷）、阶段二（优化侧边栏）、阶段三（远端文件检索）已落地并通过测试；阶段四~六**未开始**。
+- **起始日期**：2026-10-16。
+- **依据**：工作区根目录的任务书 `2.md`（用户提供的第二轮验收要求）。
+- **提交纪律**：阶段一~三的改动共用 `app/api/handlers.py`、`app/core/errors.py` 与前端若干文件，无法拆成互不依赖的提交，因此**合并为一次提交**（提交信息里逐阶段列明）；阶段四起每阶段单独提交。
+- **行号漂移**：v0.1.1 在 `app/api/handlers.py` 里插入了三个检索处理器，本文 v0.1.0 段引用的 `app/api/handlers.py:259-279`（`ENDPOINTS`）与 `:282`（`build_router()`）**已失效**，当前分别是 `:294-317` 与 `:320`。历史条目按当时源码保留，不复改。
+
+### 阶段进度（依据任务书 2.md 的六阶段）
+
+| 阶段 | 名称 | 状态 | 可核实的产物 |
+| --- | --- | --- | --- |
+| 一 | 修复已有缺陷 | 已完成 | 写权限热同步、陈旧列表标记与重试入口、新建连接不再打回占位页；测试 `tests/unit/test_permission_sync.py`、`tests/integration/test_write_permission_sync.py`、`tests/security/test_write_permission_paths.py`、`tests/e2e/test_browser_regressions.py` |
+| 二 | 优化侧边栏 | 已完成 | `frontend/assets/css/app.css`、`frontend/assets/js/connections.js`；测试 `tests/e2e/test_browser_sidebar.py` |
+| 三 | 添加远端文件检索 | 已完成 | `app/services/search.py`、`app/api/handlers.py:161`（三个检索端点）、`frontend/assets/js/search.js`、`frontend/index.html:80`/`:88`；测试 unit 36 项 / integration 15 项 / security 18 项 / e2e 4 项；接口文档 `docs/API.md` §5.20–5.22；手册第 8 章；阶段报告 `docs/reports/PHASE-03-SEARCH.md` |
+| 四 | 远端文本编辑与文件操作 | 未开始 | — |
+| 五 | 自动发现在线虚拟机 | 未开始 | — |
+| 六 | 回归、CU 验收与交付 | 未开始 | — |
+
+### 新增
+
+- **远端文件检索**（阶段三）：3 个新端点，编号第 20~22（路由表 `app/api/handlers.py:294-317`）——`POST /api/connections/{id}/search`（202 + 快照）、`GET /api/searches/{search_id}`、`DELETE /api/searches/{search_id}`（幂等中止）。
+  - 服务层 `app/services/search.py`：后台线程 `awfm-search-<id>` 逐目录列举，**只走既有 SFTP 通道，不在远端执行任何命令**；`scope` 固定 `subtree`；按名称 `casefold` 包含匹配；排序「目录 → 符号链接 → 文件」；结果行带 `parent` 与 `depth`。
+  - 四道预算（`SearchLimits`）：`max_results=500`、`max_dirs=2000`、`max_entries=100000`、`time_budget_seconds=45.0`；任一触发即 `truncated=true` 并写入中文 `truncated_reason`；读不到的目录只计入 `skipped_dirs`/`skipped`（明细上限 20 条），连续 10 个目录失败才整体失败；符号链接只报告不跟随（目录环与越界链接都不会被走进去）；同一连接同时只允许一个检索（`search_busy`）。
+  - 错误模型新增 `SearchBusy`（`code=search_busy`，HTTP 409，`app/core/errors.py:193`）。
+  - 前端：`frontend/assets/js/search.js`（发起 / 700 ms 轮询 / 中止 / 清空 / 结果表 / 区分「没有匹配」与「搜索失败」），搜索栏 `frontend/index.html:80`，结果面板 `frontend/index.html:88`；`frontend/assets/js/files.js` 的 `locate(parent, name)` 跳到所在目录、选中并高亮（`tests/e2e/test_browser_search.py` 断言 `.is-located`）。结果表列出名称 / 类型 / 所在目录 / 大小 / 修改时间。
+
+### 变更
+
+- 活动会话不再持有建连时的 `Connection` 快照，改为持有可热更新的引用，写权限开关改了立刻生效（阶段一缺陷①）。
+- 侧边栏加宽并重排卡片（名称 / 用户名+主机+端口 / 认证方式 / 远端家目录 / 状态），长名称与长路径换行且不重叠（阶段二）。
+- `docs/API.md` 扩到 22 个端点并新增 §5.20–5.22；`docs/USER_GUIDE.md` 新增第 8 章「文件检索」，原第 8~12 章顺延为 9~13 章。
+- `tests/e2e/artifacts/*.png` 加入 `.gitignore`：截图按随机 `RUN_TAG` 每次运行生成，不逐张入库（v0.1.0 已入库的 6 张保留）。
+- 仓库清理：v0.1.0 某脚本按字面量创建的 `%SystemDrive%` 目录（内含 `ProgramData/Microsoft/Windows/Caches/*.db`，0.94 MB）移入 `.archive/junk/percent-systemdrive-2026-10-16/`。
+
+### 修复
+
+- **缺陷①写权限状态不同步**：界面打开「允许写操作」后立刻上传仍被拒，必须断开重连。修复后写操作每次都以当前配置为准（`tests/security/test_write_permission_paths.py` 反向验证：撤权后旧会话引用写不进去，远端不落一个字节，连 `<名字>.awfm-part-*` 都不出现）。
+- **缺陷②远端目录刷新后的陈旧列表**：目录被删后点「刷新」，页面报错却把上一次的列表留在屏幕上。修复后旧列表被明确标注「已过期」并给出重试入口（`tests/e2e/test_browser_regressions.py`）。
+- **缺陷③新建连接后的文件区状态**：已有活动连接时新建连接会把文件区打回占位页。修复后新建不影响正在浏览的连接（同上）。
+- 阶段三实现中修掉的界面缺陷：清空检索后结果表仍留着隐藏的旧行（`frontend/assets/js/search.js` 的 `render()` 先清空再判 `idle`）；空闲态与搜索后的范围文案不一致（「范围：当前目录及其子目录」→「范围：<root> 及其子目录」）。
+- 参数形状检查前移：`start_search`（`app/api/handlers.py:161`）先校验 `path`/`query` 再找会话，避免「没连接」时把 400 变成 409（`tests/security/test_search_paths.py` 的 `test_malformed_body_is_rejected_without_a_live_session` 钉住）。
+
+### 安全
+
+- 检索的路径与关键词校验与浏览同源（`app/utils/paths.py` 的 `validate_remote_path`）：非绝对路径、含 NUL、超过 4096 字节一律 400；`..` 交给服务端 `realpath` 解析后再判定，不做调用方折叠；`query` 上限 128 字符，除制表符外的控制字符拒绝（`tests/security/test_search_paths.py`）。
+- 检索不为任何请求在远端执行 shell 命令：断言检索前后命令行含 `-p 2222` 的 `ssh.exe` 进程数不变（验收项 T-013），并断言检索不改动远端目录（`tests/security/test_search_paths.py` 的 `SearchCommandDisciplineTests`）。
+- 写权限门禁的对抗性验证：绕过界面直接打服务层写入口，撤权后依旧全部被拒（`tests/security/test_write_permission_paths.py`）。
+
+### 已知限制
+
+- 阶段四~六未开始：**没有**在线文本编辑，也没有删除 / 重命名 / 新建目录 / 压缩 / 解压入口（`ENDPOINTS` 里仍然只有上传与覆盖）。
+- 检索上限是常量，暂不可配置；不跟随符号链接、不搜文件内容、不支持通配符与正则。
+- 版本号仍是 `0.1.0`，便携发行包与校验和仍是 v0.1.0 的那一份，未重新构建。
+- 阶段六要求的真实桌面 CU 验收**尚未执行**：阶段一~三的证据来自单元 / 集成 / 安全 / 无头 Edge e2e 测试，都不等同于 CU 验收。
 
 ---
 

@@ -1,8 +1,8 @@
 # AWFM HTTP API 参考
 
-> 本文是 AWFM v0.1.0 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 19 个端点**、错误码全表，以及版本策略与「已在连接层实现但首版不通过 HTTP 暴露」的写操作。
+> 本文是 AWFM 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 22 个端点**、错误码全表，以及版本策略与「已在连接层实现但首版不通过 HTTP 暴露」的写操作。
 >
-> 文档日期 **2026-10-15** · 对应版本 `app/__init__.py:7`（`0.1.0`）· 路由注册处 `app/api/handlers.py:257`（`ENDPOINTS`）与 `app/api/handlers.py:280`（`build_router()`）
+> 文档日期 **2026-10-16** · 版本 `app/__init__.py:7`（`0.1.0`；v0.1.1 开发中，已新增第 20~22 号检索端点）· 路由注册处 `app/api/handlers.py:294`（`ENDPOINTS`）与 `app/api/handlers.py:320`（`build_router()`）
 
 ---
 
@@ -18,12 +18,13 @@
 | 协议版本 | HTTP/1.1（`protocol_version = "HTTP/1.1"`，因此响应必须给出 `Content-Length` 或 `Connection: close`） | `app/api/http_server.py:95` |
 | 认证 | 除 `GET /api/health` 外，所有 `/api/` 请求都必须带 `X-AWFM-Token` 头 | `app/api/security.py:44`、`:48`、`:132` |
 | 并发 | `ThreadingHTTPServer`，每请求一线程 | `app/api/http_server.py:81` |
-| 端点总数 | 19 | `app/api/handlers.py:257-277` |
+| 端点总数 | 22 | `app/api/handlers.py:294-317` |
 
-端点分成两组，都挂在 `/api/connections/{connection_id}` 之下：
+端点分成三组：
 
-- **连接级**（不需要已连接的会话）：``/api/connections`` 的增删改查、`connect`、`disconnect`、`status`、`host-keys`、`host-keys/trust`；
-- **会话级**（必须已连接，否则 `404 session_not_found`）：`files`、`stat`、`preview`、`download-ticket`、`download`、`upload`、`upload-check`。
+- **连接级**（不需要已连接的会话，挂在 `/api/connections` 与 `/api/connections/{connection_id}` 之下）：`/api/connections` 的增删改查、`connect`、`disconnect`、`status`、`host-keys`、`host-keys/trust`；
+- **会话级**（必须已连接，否则 `404 session_not_found`）：`files`、`stat`、`preview`、`download-ticket`、`download`、`upload`、`upload-check`、`search`；
+- **检索级**（只认检索 id，与具体连接解耦）：`GET`/`DELETE /api/searches/{search_id}`。检索是异步的：`POST …/search` 拿 id，之后轮询或中止都走这两个地址。
 
 ---
 
@@ -174,7 +175,10 @@ Content-Type: application/json
 | 16 | POST | `/api/connections/{connection_id}/download-ticket` | `download_ticket`（`:155`） | 换取下载票据 |
 | 17 | GET | `/api/connections/{connection_id}/download` | `download_file`（`:178`） | 二进制流下载 |
 | 18 | POST | `/api/connections/{connection_id}/upload` | `upload_file`（`:224`） | 上传（201 新建 / 200 覆盖） |
-| 19 | GET | `/api/connections/{connection_id}/upload-check` | `check_upload`（`:241`） | 上传前的覆盖预检 |
+| 19 | GET | `/api/connections/{connection_id}/upload-check` | `check_upload`（`:278`） | 上传前的覆盖预检 |
+| 20 | POST | `/api/connections/{connection_id}/search` | `start_search`（`:161`） | 启动检索（**202**，后台线程里跑） |
+| 21 | GET | `/api/searches/{search_id}` | `search_status`（`:181`） | 轮询检索进度 / 取结果 |
+| 22 | DELETE | `/api/searches/{search_id}` | `cancel_search`（`:185`） | 请求中止（幂等） |
 
 以下所有示例都省略了请求头 `X-AWFM-Token`（除健康检查外都必须有），`connection_id` 一律用 `vm1`。
 
@@ -538,6 +542,141 @@ Content-Type: application/json
 
 ---
 
+### 5.20 POST /api/connections/{connection_id}/search
+
+启动一次远端文件名检索。请求体是 JSON：
+
+```json
+{ "path": "/home/aimu", "query": "报告" }
+```
+
+- `path`（必填，字符串）：搜索根，必须是**目录**的绝对路径；`..` 不由调用方折叠，服务端用真实路径（`realpath`）解析后再校验，与 `/files` 同一套规则（`app/utils/paths.py` 的 `validate_remote_path`）。
+- `query`（必填，字符串）：关键词，按名称做**大小写不敏感**的包含匹配（`casefold`）。上限 128 个字符；除 `\t` 以外的控制字符一律拒绝。
+- 搜索范围固定是**该目录及其全部子目录**，快照里的 `scope` 因此恒为 `"subtree"`。
+
+成功返回 **202**（已受理、尚未完成），响应体是**发起瞬间**的快照，通常 `status` 为 `"running"`、`results` 为空数组：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "search": {
+      "id": "9f2c1b0a4e5d6c7b",
+      "connection_id": "vm1",
+      "root": "/home/aimu",
+      "query": "报告",
+      "scope": "subtree",
+      "status": "running",
+      "running": true,
+      "started_at": 1792000000.123,
+      "finished_at": null,
+      "duration_seconds": 0.0,
+      "scanned_dirs": 0,
+      "scanned_entries": 0,
+      "skipped_dirs": 0,
+      "skipped_names": 0,
+      "skipped": [],
+      "result_count": 0,
+      "truncated": false,
+      "truncated_reason": "",
+      "limits": { "max_results": 500, "max_dirs": 2000, "max_entries": 100000, "time_budget_seconds": 45.0 },
+      "error": null,
+      "results": []
+    }
+  }
+}
+```
+
+为什么是 202 而不是 200：检索跑在服务端后台线程里（线程名 `awfm-search-<id>`，见 `app/services/search.py`），HTTP 处理器只负责受理并立刻把 id 交出去，进度与结果都靠 `GET /api/searches/{search_id}` 轮询。这样长时间搜索不会把一个 HTTP 请求挂住，也随时能中止。
+
+**同一连接同一时刻只允许一个检索**：已有在跑的检索时返回 `409 search_busy`（消息「这条连接上已经有一个正在进行的搜索。」，`detail` 为「请等它结束，或在结果区点「中止」。」）。连接断开或删除时，它上面还在跑的检索会被自动请求中止（`SearchRegistry.cancel_for_connection`），因此不会留下永久占用的槽位。
+
+快照字段（`data.search`，同时也是 `GET`/`DELETE` 的返回体）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | string | 检索 id，小写十六进制（路由只接受 `[0-9a-f]+`） |
+| `connection_id` / `root` / `query` / `scope` | string | 发起时冻结的连接、搜索根、关键词；`scope` 恒为 `subtree` |
+| `status` | string | `running` / `done` / `failed` / `cancelled` |
+| `running` | bool | `status == "running"` 的便捷字段 |
+| `started_at` / `finished_at` / `duration_seconds` | number | Unix 秒；未结束时 `finished_at` 为 `null`，`duration_seconds` 按当前时刻算，保留三位小数 |
+| `scanned_dirs` / `scanned_entries` | int | 已列举的目录数、已检查的条目数 |
+| `skipped_dirs` / `skipped_names` | int | 读不到的目录数、被跳过的非法条目名（`.`/`..`/含斜杠）数 |
+| `skipped` | array | 读不到的目录明细，**最多 20 条**：`{"path", "code", "message"}` |
+| `result_count` | int | 命中条数，等于 `results` 的长度（快照里两者同源） |
+| `truncated` / `truncated_reason` | bool / string | 命中上限、目录上限、条目上限或时长预算触发时置 `true`，并给出中文原因 |
+| `limits` | object | 本次生效的上限：`max_results`(500)、`max_dirs`(2000)、`max_entries`(100000)、`time_budget_seconds`(45.0) |
+| `error` | object\|null | 失败时的 `{code, message, detail}`；**「没有匹配」不是失败**，此时为 `null` |
+| `results` | array | 命中行（见下） |
+
+结果行的字段：`name`、`type`（`directory` / `file` / `symlink` / `other`）、`size`、`mtime`、`mode`、`path`（绝对路径）、`parent`（所在目录）、`depth`（相对搜索根的层数，根的直接子项为 **1**）。排序固定为**目录 → 符号链接 → 文件**，同类型内按名称 `casefold` 升序、再按路径兜底。
+
+**符号链接策略：报告但不跟随。** 条目类型是链接时会被列进结果（`type: "symlink"`），但**不会**被当作目录下钻。因此指向目录的链接、指到搜索根之外的链接、以及自指的目录环都不会把搜索带出去或让它转圈。
+
+- 可能的错误：`invalid_request`（400：缺字段、`path` 不是绝对路径或超过 4096 字节、`query` 为空或过长或含控制字符）、`unauthorized`（401）、`connection_not_found`（404）、`session_not_found`（404）、`path_not_found`（404：搜索根不存在）、`permission_denied`（403：搜索根本身读不到）、`not_connected`（409）、`search_busy`（409）、`timeout`（504）。
+- 参数形状检查发生在**找会话之前**：连接不存在时收到畸形请求，返回的是 400 而不是 404/409（`app/api/handlers.py:161` 的注释写明了这个取舍）。
+
+### 5.21 GET /api/searches/{search_id}
+
+轮询进度与取结果。`search_id` 只接受**小写**十六进制串；其它形状的地址不匹配路由，按 `404 path_not_found`（接口路径不存在）返回。
+
+成功（200），完成态示例（命中 2 条）：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "search": {
+      "id": "9f2c1b0a4e5d6c7b",
+      "connection_id": "vm1",
+      "root": "/home/aimu",
+      "query": "报告",
+      "scope": "subtree",
+      "status": "done",
+      "running": false,
+      "started_at": 1792000000.123,
+      "finished_at": 1792000000.987,
+      "duration_seconds": 0.864,
+      "scanned_dirs": 37,
+      "scanned_entries": 412,
+      "skipped_dirs": 1,
+      "skipped_names": 0,
+      "skipped": [ { "path": "/home/aimu/locked", "code": "permission_denied", "message": "远端拒绝访问。" } ],
+      "result_count": 2,
+      "truncated": false,
+      "truncated_reason": "",
+      "limits": { "max_results": 500, "max_dirs": 2000, "max_entries": 100000, "time_budget_seconds": 45.0 },
+      "error": null,
+      "results": [
+        { "name": "报告.txt", "type": "file", "size": 19, "mtime": 1791999000, "mode": 33188,
+          "path": "/home/aimu/报告.txt", "parent": "/home/aimu", "depth": 1 },
+        { "name": "报告-草稿.txt", "type": "file", "size": 6, "mtime": 1791999050, "mode": 33188,
+          "path": "/home/aimu/报告-草稿.txt", "parent": "/home/aimu", "depth": 1 }
+      ]
+    }
+  }
+}
+```
+
+行为要点：
+
+- **读不到的目录不会让整次检索失败**：只体现在 `skipped_dirs` / `skipped` 里并继续搜；只有**连续 10 个**目录都失败时才整体置为 `failed`（`app/services/search.py` 的 `MAX_CONSECUTIVE_FAILURES`）。
+- **断连**：`status` 变 `failed`，`error.code` 为 `not_connected`，消息说明连接已断开——这与「没有匹配」是两回事。
+- **保留窗口**：检索记录只保留最近 20 条**已结束**的（`_prune_locked`），更早的会被回收，再查返回 `404 path_not_found`（消息「搜索不存在或已过期。」，`detail` 提示重新发起）。
+- 可能的错误：`unauthorized`（401）、`path_not_found`（404：id 未知/已过期，或接口路径本身不存在）。
+
+### 5.22 DELETE /api/searches/{search_id}
+
+请求中止当前检索，响应 200，返回**收到请求那一刻**的快照。
+
+- 中止是**幂等**的：已经结束的检索再 DELETE 不报错，返回它当前的终态快照（`done` / `failed` 原样返回，不会被改写成 `cancelled`）。
+- 响应里的 `status` **可能仍是 `running`**：处理器只是把取消标志交给工作线程，线程要到下一个检查点才收尾（每个条目检查一次，因此延迟很短）。判定中止完成请以轮询到的 `cancelled` 为准。
+- 中止**不算截断、也不算失败**：终态里 `truncated` 保持 `false`、`truncated_reason` 为空、`error` 为 `null`；已经找到的结果留在 `results` 里。
+- 中止后活动槽立刻释放，同一条连接可以马上发起下一次检索。
+- 可能的错误：`unauthorized`（401）、`path_not_found`（404）。
+
+---
+
 ## 6 错误码全表
 
 错误类型定义在 `app/core/errors.py`，每个类自带 `code` 与 `http_status`。
@@ -554,6 +693,7 @@ Content-Type: application/json
 | `not_connected` | 409 | 会话存在但通道已断开（SFTP `STATUS` 6/7） | `errors.py:126` |
 | `host_key_unknown` | 409 | 首次连接，主机密钥未经用户确认（`extra.fingerprints`） | `errors.py:140` |
 | `host_key_mismatch` | 409 | 主机密钥与信任库记录不符，必须人工介入 | `errors.py:151` |
+| `search_busy` | 409 | 同一条连接上已有正在进行的检索（`app/services/search.py` 的 `SearchRegistry.start`） | `errors.py:193` |
 | `payload_too_large` | 413 | 请求体超过 1 MiB，或文件超过 `max_upload_bytes` / `max_download_bytes` | `errors.py:86` |
 | `internal_error` | 500 | 未预期的内部异常；端口被占用、绑定地址不可用 | `errors.py:198` |
 | `config_error` | 500 | 配置文件损坏/不可读/写失败；找不到 `ssh` 客户端 | `errors.py:93` |
@@ -570,6 +710,7 @@ Content-Type: application/json
 - 应用版本在 `app/__init__.py:7`（当前 `0.1.0`），通过 `Server` 响应头与 `GET /api/health`、`GET /api/session` 暴露。API 路径**不带版本前缀**——这是本地单用户服务，前后端同版本发布、同一次启动一起加载（前端资源由同一个进程提供），因此不需要 URL 版本协商。
 - 配置文件有自己的版本号：`CONFIG_VERSION = 1`（`app/core/config.py` 的 `DEFAULTS["config_version"]`）。读到**更高版本**的配置文件会拒绝启动，而不是猜测字段含义；配置损坏时同样报 `config_error`，**绝不静默重置**（决策 D-006）。
 - 前端在启动时先调 `GET /api/session`，可以据此判断服务能力（例如 `max_upload_bytes`、`max_download_bytes`、`host_key_policy`），比硬编码版本号更稳。
+- **v0.1.1 开发中**：本版本在 v0.1.0 之上增加了远端文件检索（第 20~22 号端点）。`app/__init__.py` 里的版本号目前仍是 `0.1.0`，待阶段六交付时统一改为 `0.1.1` 并重新打包；端点路径、响应信封与既有端点的行为都不变（纯新增）。
 
 ### 7.2 已在连接层实现、首版不通过 HTTP 暴露的写操作
 
@@ -598,8 +739,8 @@ Content-Type: application/json
 - 请求解析与响应：`app/api/request.py`、`app/api/responses.py`
 - 服务与安全：`app/api/http_server.py`、`app/api/security.py`、`app/api/tickets.py`
 - 错误模型：`app/core/errors.py`；配置与默认值：`app/core/config.py`
-- 服务层：`app/services/connection_manager.py`、`app/services/session.py`、`app/services/filesystem.py`、`app/services/transfer.py`
+- 服务层：`app/services/connection_manager.py`、`app/services/session.py`、`app/services/filesystem.py`、`app/services/transfer.py`、`app/services/search.py`（检索的后台线程、预算与截断、跳过目录、中止）
 - 连接层：`app/ssh/sftp_client.py`、`app/ssh/sftp_transport.py`、`app/ssh/sftp_protocol.py`、`app/ssh/known_hosts.py`、`app/ssh/askpass.py`、`app/ssh/ssh_launcher.py`
 - 数据模型与工具：`app/models/connection.py`、`app/models/entry.py`、`app/utils/paths.py`
-- 前端调用方：`frontend/assets/js/api.js`、`frontend/assets/js/app.js`、`frontend/assets/js/transfer.js`、`frontend/index.html`
+- 前端调用方：`frontend/assets/js/api.js`、`frontend/assets/js/app.js`、`frontend/assets/js/transfer.js`、`frontend/assets/js/search.js`（检索面板：发起、轮询、中止、清空、定位）、`frontend/index.html`
 - 相关文档：`.md`（§3.1 功能分级、§3.2 首版不做、§4.2 API 草案、§10 安全要求）、`docs/DECISIONS.md`（D-006/D-007/D-009/D-010/D-014）、`docs/ARCHITECTURE.md`、`docs/SECURITY.md`

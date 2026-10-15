@@ -143,6 +143,27 @@ export function previewFile(id, path, maxBytes) {
   return request("GET", url);
 }
 
+/**
+ * 发起一次远端检索。
+ *
+ * 搜索在服务端跑（SFTP 连接只在后端），这里拿到的是**初始快照**，之后按
+ * /api/searches/<id> 轮询进度。后端用 202 表示「已受理」，所以不能把它当成
+ * 「已经搜完」。
+ */
+export function startSearch(id, path, query) {
+  return request("POST", "/api/connections/" + qs(id) + "/search", {
+    body: { path: path, query: query },
+  });
+}
+
+export function searchStatus(searchId) {
+  return request("GET", "/api/searches/" + qs(searchId));
+}
+
+export function cancelSearch(searchId) {
+  return request("DELETE", "/api/searches/" + qs(searchId));
+}
+
 export function uploadCheck(id, directory, filename) {
   return request(
     "GET",

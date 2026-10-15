@@ -20,15 +20,25 @@ export function initConnections(hooks) {
   if (hooks) deps = Object.assign(deps, hooks);
 }
 
+// 四种状态各给一句人话，并且彼此明显不同（2.md 阶段二要求区分
+// 已连接 / 连接中 / 连接失败 / 已断开）。文案变了没关系，状态值不变。
 const STATE_TEXT = {
   connected: "已连接",
   connecting: "连接中",
-  error: "连接出错",
-  disconnected: "未连接",
+  error: "连接失败",
+  disconnected: "已断开",
+};
+
+// 药丸的悬浮说明：状态本身只是一个词，这里补一句它意味着什么。
+const STATE_HINT = {
+  connected: "已有活动的 SSH 会话，可以浏览远端文件。",
+  connecting: "正在建立 SSH 会话，请稍候。",
+  error: "上次连接没有成功，具体原因见卡片下方的错误信息。",
+  disconnected: "当前没有活动的 SSH 会话，点「连接」才会建立。",
 };
 
 export function stateText(name) {
-  return STATE_TEXT[name] || name || "未连接";
+  return STATE_TEXT[name] || name || "已断开";
 }
 
 export async function refreshConnections() {
@@ -59,13 +69,20 @@ function connectionNode(item) {
   const session = item.session || {};
   const connected = Boolean(session.connected);
   const connecting = session.state === "connecting";
+  // 这个局部变量不能叫 state：本模块顶部 import 了一个同名的状态模块，
+  // 同名会把 state.activeId 变成 undefined，卡片就会丢掉 data-active。
+  const sessionState = session.state || "disconnected";
+  const label = targetLabel(item);
   const node = h("li", {
     class: "conn-item",
     "data-id": item.id,
     "data-active": state.activeId === item.id ? "true" : "false",
-    "data-state": session.state || "disconnected",
+    "data-state": sessionState,
   });
 
+  // 卡片从上到下依次是：名称 + 状态 / 目标串 / 认证方式等标签 / 家目录 / 备注 / 按钮。
+  // 每一段都可能很长，所以各自的排布规则写在 CSS 里（换行、限行、省略），
+  // 并且都在 title 里留一份完整文本 —— 2.md 阶段二要求长文本不互相覆盖。
   node.appendChild(
     h(
       "div",
@@ -73,23 +90,36 @@ function connectionNode(item) {
       h("span", { class: "conn-name", text: item.name || item.id, title: item.name || item.id }),
       h(
         "span",
-        { class: "pill", "data-state": session.state || "disconnected" },
+        {
+          class: "pill",
+          "data-state": sessionState,
+          title: "状态：" + stateText(sessionState) + "　" + (STATE_HINT[sessionState] || ""),
+        },
         h("span", { class: "dot" }),
-        stateText(session.state)
+        stateText(sessionState)
       )
     )
   );
-  node.appendChild(h("div", { class: "conn-target", text: targetLabel(item) }));
+  node.appendChild(h("div", { class: "conn-target", text: label, title: label }));
 
   const meta = h("div", { class: "conn-meta" });
   meta.appendChild(
     h("span", { class: "tag", text: item.auth_method === "password" ? "密码认证" : "密钥认证" })
   );
   if (item.allow_write) meta.appendChild(h("span", { class: "tag tag-warn", text: "允许写" }));
-  if (connected && session.home) {
-    meta.appendChild(h("span", { class: "tag", text: "家目录 " + session.home }));
-  }
   node.appendChild(meta);
+
+  // 家目录只有连上之后才知道；不知道就不编，宁可不显示。
+  if (connected && session.home) {
+    node.appendChild(
+      h(
+        "div",
+        { class: "conn-home", title: "远端家目录 " + session.home },
+        h("span", { class: "conn-home-label", text: "家目录" }),
+        h("span", { class: "conn-home-path", text: session.home })
+      )
+    );
+  }
 
   if (session.last_error) {
     node.appendChild(h("div", { class: "conn-note broken", text: session.last_error }));
@@ -104,6 +134,7 @@ function connectionNode(item) {
         type: "button",
         class: "btn btn-small",
         text: "浏览",
+        title: "在右侧文件区浏览这条连接的远端目录",
         onClick: function (event) {
           event.stopPropagation();
           openConnection(item.id);
@@ -115,6 +146,7 @@ function connectionNode(item) {
         type: "button",
         class: "btn btn-small",
         text: "断开",
+        title: "断开这条连接的 SSH 会话（远端文件不受影响）",
         onClick: function (event) {
           event.stopPropagation();
           doDisconnect(item.id);
@@ -127,6 +159,7 @@ function connectionNode(item) {
         type: "button",
         class: "btn btn-small btn-primary",
         text: connecting ? "连接中…" : "连接",
+        title: "建立到这台机器的 SSH 会话",
         disabled: connecting,
         onClick: function (event) {
           event.stopPropagation();
@@ -140,6 +173,7 @@ function connectionNode(item) {
       type: "button",
       class: "btn btn-small",
       text: "编辑",
+      title: "修改这条连接的名称、地址、登录方式等配置",
       onClick: function (event) {
         event.stopPropagation();
         openConnectionForm(item);
@@ -151,6 +185,7 @@ function connectionNode(item) {
       type: "button",
       class: "btn btn-small btn-danger",
       text: "删除",
+      title: "删除这条连接配置（远端机器上的文件不会动）",
       onClick: function (event) {
         event.stopPropagation();
         doDelete(item);
@@ -554,9 +589,11 @@ export function openConnectionForm(existing) {
         await api.updateConnection(existing.id, payload);
         toastOk("已保存连接配置。");
       } else {
-        const created = await api.createConnection(payload);
+        await api.createConnection(payload);
         toastOk("已新增连接。");
-        if (created && created.connection && created.connection.id) state.activeId = null;
+        // 这里刻意**不动** state.activeId：新连接只是写进了配置文件，还没有会话，
+        // 把它设成活动连接只会让文件区塌回占位页（v0.1.0 的缺陷③）。要浏览它，
+        // 用户自己点卡片上的「连接」即可。
       }
       closeModal("saved");
       await refreshConnections();

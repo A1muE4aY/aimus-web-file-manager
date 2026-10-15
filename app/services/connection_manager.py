@@ -34,6 +34,15 @@ from app.utils.paths import safe_for_log
 
 logger = logging.getLogger(__name__)
 
+#: 决定「这条会话连的是哪台机器、用什么身份」的字段。
+#: 其中任何一个变了，现有会话就指向了另一个目标，不能继续用；其余字段
+#: （名称、备注、允许写操作开关）只是行为开关，热更新到现有会话即可。
+_SESSION_IDENTITY_FIELDS = ("host", "port", "username", "auth_method", "identity_file")
+
+
+def _session_identity(connection: Connection) -> tuple:
+    return tuple(getattr(connection, name, None) for name in _SESSION_IDENTITY_FIELDS)
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -81,6 +90,10 @@ class ConnectionManager:
             known = {c.id for c in config.connections}
             for stale_id in [cid for cid in self._sessions if cid not in known]:
                 self._sessions.pop(stale_id).disconnect()
+            # 配置文件里的值可能变了（用户手工改过、或 --init-config 重新生成过），
+            # 同样要让活动会话跟上，否则权限判断会一直用旧值。
+            for connection in config.connections:
+                self._sync_live_session(connection)
 
     def list_connections(self) -> list[dict]:
         """列出全部连接配置，附带各自的会话状态。"""
@@ -162,8 +175,32 @@ class ConnectionManager:
             updated = Connection.from_dict(merged)
             self._config.connections[index] = updated
             save_config(self._config)
+            # 关键：配置一改就要同步到活动会话。漏掉这一步的后果是「界面开了写
+            # 操作，服务端仍按旧配置拒绝上传」，只能断开重连才好。
+            self._sync_live_session(updated)
             logger.info("更新连接 %s", updated.id)
             return updated.to_public_dict()
+
+    def _sync_live_session(self, connection: Connection) -> None:
+        """把一条刚被改过的配置同步到它的活动会话上。调用方需持有 self._lock。
+
+        两种行为，取决于改了什么：
+
+        * **只改了行为开关**（名称、备注、允许写操作）→ 会话保持连接，重新绑定到新
+          配置。写权限判断每次都读当前绑定，所以开关立即生效。
+        * **改了身份字段**（主机、端口、用户名、认证方式、私钥）→ 现有会话连的还是
+          老目标，留着它只会让用户在一条「不存在」的会话上操作。直接断开并从表中
+          移除，状态回到未连接，由用户自己决定何时按新配置重连。
+        """
+        session = self._sessions.get(connection.id)
+        if session is None:
+            return
+        if _session_identity(session.connection) != _session_identity(connection):
+            logger.info("连接 %s 的连接参数已变更，断开其现有会话。", connection.id)
+            self._sessions.pop(connection.id, None)
+            session.disconnect()
+            return
+        session.bind_connection(connection)
 
     def delete_connection(self, connection_id: str) -> dict:
         """删除连接，并**先断开**它的会话。返回被删掉的那条配置（公开形态）。"""

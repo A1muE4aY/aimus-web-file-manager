@@ -26,6 +26,10 @@
   --radius-sm: 5px;
   --shadow: 0 1px 2px rgba(20, 25, 32, .06), 0 4px 14px rgba(20, 25, 32, .06);
   --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  /* 侧栏宽度只在这里定义一次，其余地方一律引用变量（2.md 阶段二：用布局变量，
+     不要让多处硬编码的尺寸互相打架）。上限用视口比例兜底，窄窗口自动收缩。 */
+  --sidebar-width: 320px;
+  --sidebar-max-ratio: 42vw;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -125,8 +129,11 @@ body {
 /* ------------------------------------------------------------------ 侧栏 */
 
 .sidebar {
-  width: 268px;
+  /* 加宽到 320px：长连接名、user@host:port 与家目录路径都要放得下。
+     min() 保证窄窗口下侧栏自己收窄，文件表格永远留得下足够宽度。 */
+  width: min(var(--sidebar-width), var(--sidebar-max-ratio));
   flex: 0 0 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -160,7 +167,8 @@ body {
 .conn-item {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 10px 11px;
+  min-width: 0;
+  padding: 11px 12px;
   margin-bottom: 8px;
   background: var(--surface-2);
   cursor: pointer;
@@ -172,31 +180,56 @@ body {
 
 .conn-item-head {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 
+/* 长名称最多占两行，再长就省略；完整名称始终在 title 里，悬停可见。 */
 .conn-name {
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 600;
+  line-height: 1.35;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
+/* 状态药丸不参与压缩，长名称再长也不会把它挤出去。 */
+.conn-item-head .pill { flex: 0 0 auto; }
+
+/* 目标串 user@host:port 折行显示而不是截断：它是最要紧的身份信息。 */
 .conn-target {
   font-family: var(--mono);
   font-size: 11.5px;
+  line-height: 1.5;
   color: var(--text-dim);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
 }
+
+/* 远端家目录单独一行：路径通常很长，塞进标签里会挤坏整个卡片。 */
+.conn-home {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.conn-home-label { flex: 0 0 auto; color: var(--text-faint); }
+.conn-home-path { font-family: var(--mono); min-width: 0; overflow-wrap: anywhere; }
 
 .conn-meta { margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
-.conn-actions { display: flex; gap: 6px; margin-top: 9px; }
+/* 四个按钮允许换行：窄侧栏下也必须全部可点，不互相盖住。 */
+.conn-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+.conn-actions .btn { flex: 0 0 auto; }
 
 /* ------------------------------------------------------------------ 状态 */
 
@@ -349,6 +382,27 @@ body {
   border-radius: var(--radius);
   margin-bottom: 8px;
 }
+
+/* 列表过期横幅：贴在表格顶部，说明「看到的是旧数据」并给出重试入口。 */
+.list-stale {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  background: var(--warn-weak);
+  border-bottom: 1px solid var(--warn);
+  color: var(--warn);
+}
+
+.list-stale[hidden] { display: none; }
+
+/* 过期/加载中的表格压暗，视觉上明确区别于「这就是最新内容」。 */
+.table-wrap[data-stale="true"] .file-table tbody { opacity: .55; }
 
 .file-table {
   width: 100%;
@@ -606,8 +660,9 @@ td.col-time { font-family: var(--mono); font-size: 12px; color: var(--text-dim);
 
 @keyframes toast-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-@media (max-width: 720px) {
-  .sidebar { width: 200px; }
+/* 窄窗口：侧栏宽度已由 --sidebar-width / --sidebar-max-ratio 自动收缩，
+   这里只收起最占宽度的两列，保证文件表格本身始终可用。 */
+@media (max-width: 820px) {
   .col-perm, td.col-perm, .col-type, td.col-type { display: none; }
 }
 
@@ -662,4 +717,123 @@ td.col-time { font-family: var(--mono); font-size: 12px; color: var(--text-dim);
   cursor: pointer;
 }
 .toast-close:hover { color: var(--text); }
+
+/* ------------------------------------------------------------------ 文件检索 */
+
+/* 搜索栏：与路径条、工具栏同一列的第四行。输入框占满剩余宽度，范围文案靠右，
+   窄窗口下先被省略号吃掉 —— 它只是提示，不是操作入口。 */
+.searchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.search-label { font-size: 12.5px; color: var(--text-dim); flex: 0 0 auto; }
+
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.search-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+.search-input:disabled { background: var(--surface-2); color: var(--text-faint); }
+
+.search-scope {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 结果面板：贴在搜索栏下面的一块独立卡片。文件表格仍在它下面，两边互不遮挡，
+   这样「点定位 → 下面的列表跳过去」时还能一眼看到结果列表。 */
+.search-panel {
+  flex: 0 0 auto;
+  margin-bottom: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.search-panel[hidden] { display: none; }
+
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.search-title { font-size: 13px; overflow-wrap: anywhere; }
+
+.search-status {
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.search-status[data-state="running"] { border-color: var(--accent); color: var(--accent); background: var(--accent-weak); }
+.search-status[data-state="done"] { border-color: var(--ok); color: var(--ok); background: var(--ok-weak); }
+.search-status[data-state="failed"] { border-color: var(--danger); color: var(--danger); background: var(--danger-weak); }
+.search-status[data-state="cancelled"] { border-color: var(--warn); color: var(--warn); background: var(--warn-weak); }
+
+.search-progress { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+.search-head-right { margin-left: auto; display: flex; gap: 6px; }
+
+.search-hint {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.search-hint[data-kind="warn"] { color: var(--warn); background: var(--warn-weak); }
+.search-hint[data-kind="error"] { color: var(--danger); background: var(--danger-weak); }
+.search-hint[hidden] { display: none; }
+
+/* 结果多时最多占屏幕 42%，其余留给文件列表。 */
+.search-rows { max-height: 42vh; overflow: auto; }
+.search-rows[hidden] { display: none; }
+
+.search-table thead th { cursor: default; }
+.search-table tbody tr { cursor: default; }
+
+.col-dir { width: 40%; }
+.col-type { width: 72px; }
+.col-action { width: 66px; text-align: right; }
+
+td.col-dir {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  max-width: 320px;
+}
+
+/* 「定位」之后短暂描一圈，提示用户下面的文件列表已经跳过去了。 */
+.file-table tbody tr.is-located { box-shadow: inset 0 0 0 2px var(--warn); }
+
+@media (max-width: 820px) {
+  .search-table .col-time, .search-table td.col-time { display: none; }
+}
+
 

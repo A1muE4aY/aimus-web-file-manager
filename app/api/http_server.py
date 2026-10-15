@@ -31,6 +31,7 @@ from app.api.tickets import DownloadTickets
 from app.core.errors import AwfmError, InternalError, PathNotFound, ValidationError
 from app.core.config import AppConfig
 from app.services.connection_manager import ConnectionManager
+from app.services.search import SearchRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,9 @@ class AppContext:
     manager: ConnectionManager
     token: str = field(default_factory=new_session_token)
     tickets: DownloadTickets = field(default_factory=DownloadTickets)
+    #: 正在跑与刚跑完的文件检索。搜索要跨请求存活（启动一个请求、轮询若干请求），
+    #: 所以登记处挂在这里，而不是放在某个处理函数的局部变量里。
+    searches: SearchRegistry = field(default_factory=SearchRegistry)
     router: Any = None
 
     @property

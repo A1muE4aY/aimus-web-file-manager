@@ -25,3 +25,5 @@ python -m unittest discover -s tests/unit -t .
 | `test_router.py` | 正则路由器 |
 | `test_tickets.py` | 下载票据 |
 | `test_api_security.py` | API 层安全校验（令牌、Host、来源、方法） |
+| `test_permission_sync.py` | 写权限同步（阶段一缺陷①）：活动会话持有的连接必须可热更新，而不是建连时的快照 |
+| `test_search.py` | 检索服务（36 项）：匹配与排序、depth 语义、四道预算与截断、跳过与取消、单连接并发限制 |

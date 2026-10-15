@@ -279,6 +279,9 @@ def _serve(config: AppConfig) -> int:
     finally:
         server.shutdown()
         server.server_close()
+        # 先让还在跑的搜索停下来，再断会话 —— 顺序反过来的话，
+        # 搜索线程会看到一条已断开的连接，日志里就多出一堆无意义的失败。
+        server.context.searches.shutdown()
         # 验收项 T-013：不留孤儿 ssh 进程。
         manager.disconnect_all()
         logger.info("已停止，所有会话已断开。")

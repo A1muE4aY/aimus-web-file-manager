@@ -77,9 +77,49 @@
           </div>
         </div>
 
+        <form class="searchbar" id="searchbar" autocomplete="off">
+          <label class="search-label" for="search-input">搜索</label>
+          <input type="search" id="search-input" class="search-input"
+                 placeholder="按文件名搜索，回车开始" disabled>
+          <button type="submit" class="btn" id="btn-search" disabled>搜索</button>
+          <span class="search-scope" id="search-scope"></span>
+        </form>
+
+        <section class="search-panel" id="search-panel" hidden aria-label="搜索结果">
+          <header class="search-head">
+            <strong class="search-title" id="search-title">搜索结果</strong>
+            <span class="search-status" id="search-status"></span>
+            <span class="search-progress" id="search-progress"></span>
+            <span class="search-head-right">
+              <button type="button" class="btn btn-small" id="btn-search-cancel" hidden>中止</button>
+              <button type="button" class="btn btn-small" id="btn-search-clear" hidden>清空</button>
+            </span>
+          </header>
+          <p class="search-hint" id="search-hint" hidden></p>
+          <div class="search-rows" id="search-rows" hidden>
+            <table class="file-table search-table" id="search-table">
+              <thead>
+                <tr>
+                  <th class="col-name" scope="col">名称</th>
+                  <th class="col-type" scope="col">类型</th>
+                  <th class="col-dir" scope="col">所在目录</th>
+                  <th class="col-size" scope="col">大小</th>
+                  <th class="col-time" scope="col">修改时间</th>
+                  <th class="col-action" scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="search-body"></tbody>
+            </table>
+          </div>
+        </section>
+
         <div class="notice" id="notice" hidden></div>
 
         <div class="table-wrap">
+          <div class="list-stale" id="list-stale" hidden>
+            <span id="list-stale-text"></span>
+            <button type="button" class="btn btn-small" id="btn-retry-list">重试</button>
+          </div>
           <table class="file-table" id="file-table">
             <thead>
               <tr>

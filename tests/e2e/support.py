@@ -12,6 +12,7 @@ import base64
 import contextlib
 import json
 import os
+import shutil
 import socket
 import struct
 import subprocess
@@ -331,7 +332,10 @@ def browser_session(*, width: int = 1400, height: int = 900):
     if not executable:
         raise unittest.SkipTest("没有找到 msedge.exe，端到端测试被跳过。")
     debug_port = free_port()
-    with tempfile.TemporaryDirectory(prefix="awfm-e2e-profile-") as profile:
+    # ignore_cleanup_errors：Edge 刚退出时缓存文件可能还被占着，删不掉不该让用例报错。
+    with tempfile.TemporaryDirectory(
+        prefix="awfm-e2e-profile-", ignore_cleanup_errors=True
+    ) as profile:
         command = [
             executable,
             "--headless=new",
@@ -366,3 +370,6 @@ def browser_session(*, width: int = 1400, height: int = 900):
             if session is not None:
                 session.close()
             _terminate_tree(process)
+            # 先尽力删一次临时 profile（进程已退出，多数文件这时能删掉），
+            # 剩下的交给 TemporaryDirectory(ignore_cleanup_errors=True) 兜底。
+            shutil.rmtree(profile, ignore_errors=True)

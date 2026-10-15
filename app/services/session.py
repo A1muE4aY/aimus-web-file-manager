@@ -63,7 +63,7 @@ class RemoteSession:
     """与某一条连接配置对应的一条活动会话。线程安全（内部一把可重入锁）。"""
 
     def __init__(self, connection: Connection) -> None:
-        self.connection = connection
+        self._connection = connection
         self._lock = threading.RLock()
         self._transport: SftpTransport | None = None
         self._client: SftpClient | None = None
@@ -72,6 +72,35 @@ class RemoteSession:
         self._connected_at: float | None = None
         self._home: str | None = None
         self._server_version: int | None = None
+
+    # -- 绑定的配置 -------------------------------------------------------
+
+    @property
+    def connection(self) -> Connection:
+        """当前生效的连接配置。
+
+        会话建好之后配置仍可能被改（最常见的是「允许写操作」这个开关），所以这里
+        读的是**当前**绑定，而不是建会话那一刻的快照 —— 否则写权限判断会一直用
+        过期值，表现为「界面上开了写操作，上传仍然被拒，必须断开重连」。
+        """
+        with self._lock:
+            return self._connection
+
+    def bind_connection(self, connection: Connection) -> None:
+        """把会话重新绑到一份新的配置上。
+
+        只由 app.services.connection_manager.ConnectionManager 调用：它是唯一
+        知道「配置刚刚被改过」的地方。绑定换的是一个引用，线程安全；权限判断每次
+        都重新读它，所以开关立刻生效，不需要断开重连。
+        """
+        with self._lock:
+            self._connection = connection
+
+    @property
+    def allow_write(self) -> bool:
+        """当前配置是否允许写。每次重新读，调用方不该缓存这个判定。"""
+        with self._lock:
+            return bool(self._connection.allow_write)
 
     # -- 只读状态 ---------------------------------------------------------
 

@@ -10,6 +10,8 @@
 | test_credentials.py | 密码不进配置文件、不回显、不进日志、不进 ssh 命令行 | 否 |
 | test_path_traversal.py | 远端路径语义（.. 由服务端 REALPATH 解析、只解码一次、NUL/超长拒绝、上传名不得穿越） | 是 |
 | test_host_key.py | 首次连接必须人工确认（T-005）、密钥变化是硬失败且不自动覆盖、accept-new 才写库 | 是 |
+| test_write_permission_paths.py | 写权限门禁的对抗性测试（阶段一缺陷①）：绕过界面直接打服务层写入口，撤权后旧会话引用必须仍然写不进去、远端不落一个字节 | 部分 |
+| test_search_paths.py | 检索的参数与边界防线（18 项）：畸形 path/query 一律 400、形状检查先于找会话、未知/非小写十六进制 id 404、检索期间不新增 ssh 进程（T-013）、检索不改动远端目录 | 部分 |
 
 需要测试床的用例在 data/testbed/id_ed25519 或 127.0.0.1:2222 不存在时
 **跳过（skip）而不是失败**，见 tests/integration/support.py 的 require_testbed。

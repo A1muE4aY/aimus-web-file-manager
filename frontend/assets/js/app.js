@@ -12,6 +12,7 @@ import { confirmDialog, infoDialog } from "./modal.js";
 import * as connections from "./connections.js";
 import * as files from "./files.js";
 import * as transfer from "./transfer.js";
+import * as search from "./search.js";
 import { openPreview } from "./preview.js";
 import { state, activeConnection, allowWrite, isConnected, connectionById } from "./state.js";
 
@@ -44,11 +45,15 @@ function updateToolbar() {
   $("#btn-download").disabled = !(connected && selectable);
   $("#btn-upload").disabled = !(connected && allowWrite(conn.id));
   $("#chk-allow-write").checked = Boolean(connected && allowWrite(conn.id));
+  // 搜索栏的可用性与范围文案也随连接状态走，统一在这里刷新。
+  search.render();
 }
 
 async function enterConnection(id) {
   const conn = connectionById(id);
   if (!conn) return;
+  // 换连接时先清掉上一次的检索结果：那些路径属于另一台机器，留着只会误导。
+  search.resetSearch();
   state.activeId = id;
   connections.renderSidebar();
   updateToolbar();
@@ -59,8 +64,14 @@ async function enterConnection(id) {
 
 function leaveConnection() {
   state.activeId = null;
+  search.resetSearch();
   files.resetView();
   updateToolbar();
+}
+
+/** 检索结果里的「定位」：交给文件列表跳目录并选中，检索面板保持打开。 */
+function handleLocate(parent, name) {
+  files.locate(parent, name);
 }
 
 function handleOpenFile(entry) {
@@ -118,6 +129,7 @@ function showHelp() {
     block("怎么用", [
       "在左侧「+ 新增」里填目标机的地址与登录方式，然后点「连接」。",
       "双击目录进入，双击文件预览；也可以用上方按钮下载。",
+      "在搜索框里输入名称回车，会在当前目录及其子目录里递归找文件名；结果里点「定位」直接跳到那个目录。",
       "顶部路径条可以点任意一级直接跳回去。",
       "「允许写操作」默认关闭；打开后才可以上传与覆盖远端文件。",
     ])
@@ -188,6 +200,7 @@ async function boot() {
     onOpenFile: handleOpenFile,
     onPathChange: updateToolbar,
   });
+  search.initSearch({ onLocate: handleLocate });
   transfer.initTransfer({
     onChanged: function () {
       files.refresh();
