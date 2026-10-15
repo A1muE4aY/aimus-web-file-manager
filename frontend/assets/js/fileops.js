@@ -41,6 +41,19 @@ function describe(error) {
   return message + detail;
 }
 
+/**
+ * 拆掉响应外面那层信封（后端把结果包成 {"entry": ...} / {"deleted": ...} 这样的形状）。
+ *
+ * 这里刻意在缺键时抛错而不是返回 undefined：界面上显示「已删除「undefined」」
+ * 比直接报错更难查 —— 端到端用例会因此立刻变红。
+ */
+function unwrap(data, key) {
+  if (!data || typeof data !== "object" || !(key in data)) {
+    throw new Error("接口响应里缺少 " + key + " 字段，界面无法显示这次操作的结果。");
+  }
+  return data[key];
+}
+
 /** 没有进度可报、又可能耗时几秒的操作，至少要让人看到它在跑。 */
 function busyOverlay(text) {
   const node = h("div", { class: "busy-overlay", id: "busy-overlay" }, h("div", { class: "busy-text", text: text }));
@@ -152,8 +165,11 @@ export async function renameEntry(entry) {
       return "";
     },
     run: async function () {
-      const data = await api.renameEntry(conn.id, entry.path, input.value.trim());
-      return { toast: "已重命名为「" + data.entry.new_name + "」。" };
+      const renamed = unwrap(
+        await api.renameEntry(conn.id, entry.path, input.value.trim()),
+        "entry"
+      );
+      return { toast: "已重命名为「" + renamed.new_name + "」。" };
     },
   });
 }
@@ -177,9 +193,9 @@ export async function deleteEntry(entry) {
 
   let overlay = busyOverlay("正在删除「" + entry.name + "」…");
   try {
-    const data = await api.deleteEntry(conn.id, entry.path, false);
+    const deleted = unwrap(await api.deleteEntry(conn.id, entry.path, false), "deleted");
     overlay.close();
-    reportDeleted(data);
+    reportDeleted(deleted);
     return;
   } catch (error) {
     overlay.close();
@@ -196,9 +212,9 @@ export async function deleteEntry(entry) {
       if (!again) return;
       overlay = busyOverlay("正在删除「" + entry.name + "」…");
       try {
-        const data = await api.deleteEntry(conn.id, entry.path, true);
+        const deleted = unwrap(await api.deleteEntry(conn.id, entry.path, true), "deleted");
         overlay.close();
-        reportDeleted(data);
+        reportDeleted(deleted);
       } catch (error2) {
         overlay.close();
         toastError(error2);
@@ -252,10 +268,13 @@ export async function compressEntry(entry) {
       return "";
     },
     run: async function () {
-      const data = await api.compressEntry(conn.id, entry.path, input.value.trim());
-      const skipped = (data.skipped || []).length;
+      const archive = unwrap(
+        await api.compressEntry(conn.id, entry.path, input.value.trim()),
+        "archive"
+      );
+      const skipped = (archive.skipped || []).length;
       let text =
-        "已生成「" + data.name + "」（" + data.entries + " 个条目，" + formatSize(data.size) + "）";
+        "已生成「" + archive.name + "」（" + archive.entries + " 个条目，" + formatSize(archive.size) + "）";
       if (skipped) text += "，跳过 " + skipped + " 个不支持的条目";
       return { toast: text + "。" };
     },
@@ -298,13 +317,16 @@ export async function extractEntry(entry) {
       return "";
     },
     run: async function () {
-      const data = await api.extractEntry(conn.id, entry.path, into.value.trim(), overwrite.checked);
-      let text = "已解压 " + data.files + " 个文件";
-      if (data.directories) text += "、建立 " + data.directories + " 个目录";
-      if ((data.existing || []).length) text += "；跳过 " + data.existing.length + " 个已存在的条目";
-      if ((data.skipped || []).length) text += "；跳过 " + data.skipped.length + " 个不支持或不安全的条目";
-      text += "（目标 " + data.destination + "）。";
-      if (data.stopped) return { warn: text + " 解压被上限中断：" + data.stopped };
+      const result = unwrap(
+        await api.extractEntry(conn.id, entry.path, into.value.trim(), overwrite.checked),
+        "extract"
+      );
+      let text = "已解压 " + result.files + " 个文件";
+      if (result.directories) text += "、建立 " + result.directories + " 个目录";
+      if ((result.existing || []).length) text += "；跳过 " + result.existing.length + " 个已存在的条目";
+      if ((result.skipped || []).length) text += "；跳过 " + result.skipped.length + " 个不支持或不安全的条目";
+      text += "（目标 " + result.destination + "）。";
+      if (result.stopped) return { warn: text + " 解压被上限中断：" + result.stopped };
       return { toast: text };
     },
   });

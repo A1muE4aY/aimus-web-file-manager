@@ -197,24 +197,28 @@ export function saveText(id, path, text, options) {
   });
 }
 
+/** 响应形如 {"entry": {...}} —— 调用方要先拆掉这层信封（见 fileops.js 的 unwrap）。 */
 export function renameEntry(id, path, newName) {
   return request("POST", "/api/connections/" + qs(id) + "/rename", {
     body: { path: path, new_name: newName },
   });
 }
 
+/** 响应形如 {"deleted": {...}}：removed 里有文件与目录的计数。 */
 export function deleteEntry(id, path, recursive) {
   return request("POST", "/api/connections/" + qs(id) + "/delete", {
     body: { path: path, recursive: Boolean(recursive) },
   });
 }
 
+/** 响应形如 {"archive": {...}}：entries / size / bytes / skipped 都在里面。 */
 export function compressEntry(id, path, name) {
   return request("POST", "/api/connections/" + qs(id) + "/compress", {
     body: { path: path, name: name || "" },
   });
 }
 
+/** 响应形如 {"extract": {...}}：files / directories / existing / skipped / stopped 都在里面。 */
 export function extractEntry(id, path, into, overwrite) {
   return request("POST", "/api/connections/" + qs(id) + "/extract", {
     body: { path: path, into: into || "", overwrite: Boolean(overwrite) },

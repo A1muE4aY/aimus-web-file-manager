@@ -248,6 +248,28 @@ class BrowserEditTests(unittest.TestCase):
         )
 
     # ------------------------------------------------------------------ 用例
+    def wait_for_toast(self, page, needle: str, *, timeout: int = 30) -> str:
+        """等一条包含指定文字的轻提示，并顺手钉住「提示里不能出现 undefined」。
+
+        这条断言有来历：文件操作成功之后，界面曾把响应里并不存在的字段直接拼进
+        提示，屏幕上出现「已删除「undefined」」—— (远端状态是对的，只有提示是错的)。
+        所以核对远端之余，还要核对界面把结果说成了什么。
+        """
+        page.wait_for(
+            "Array.prototype.some.call(document.querySelectorAll('#toasts .toast .toast-text'),"
+            " function (n) { return n.textContent.indexOf(" + js(needle) + ") >= 0; })",
+            timeout=timeout,
+            message="没有出现包含「%s」的提示" % needle,
+        )
+        text = page.evaluate(
+            "(function () {"
+            "  var nodes = document.querySelectorAll('#toasts .toast .toast-text');"
+            "  return nodes.length ? nodes[nodes.length - 1].textContent : '';"
+            "})()"
+        )
+        self.assertNotIn("undefined", text, "界面提示里出现了 undefined：" + text)
+        return text
+
     def test_editor_saves_an_edited_file(self):
         with browser_session() as page:
             self.open_fixture_in_browser(page)
@@ -270,6 +292,7 @@ class BrowserEditTests(unittest.TestCase):
             )
             page.evaluate("document.getElementById('btn-editor-save').click()")
             page.wait_for(MODAL_CLOSED, timeout=60, message="保存之后对话框没有关掉")
+            self.assertIn(EDIT_FILE, self.wait_for_toast(page, "已保存", timeout=60))
 
             # 界面说保存了，远端必须真有这个字节。
             self.assertEqual(self.remote_text(EDIT_FILE), EDITED_TEXT)
@@ -377,6 +400,7 @@ class BrowserEditTests(unittest.TestCase):
             )
             page.evaluate(set_value_expr("rename-input", RENAMED_FILE))
             page.evaluate("document.getElementById('btn-rename-ok').click()")
+            self.assertIn(RENAMED_FILE, self.wait_for_toast(page, "已重命名"))
             page.wait_for(
                 row_names_expr(RENAMED_FILE), timeout=60, message="重命名之后列表里没有出现新名字"
             )
@@ -392,6 +416,9 @@ class BrowserEditTests(unittest.TestCase):
                 page.evaluate("document.getElementById('compress-name').value"), ARCHIVE_FILE
             )
             page.evaluate("document.getElementById('btn-compress-ok').click()")
+            compressed = self.wait_for_toast(page, "已生成", timeout=90)
+            self.assertIn(ARCHIVE_FILE, compressed)
+            self.assertIn("个条目", compressed)
             page.wait_for(
                 row_names_expr(ARCHIVE_FILE), timeout=90, message="压缩之后列表里没有出现压缩包"
             )
@@ -406,6 +433,7 @@ class BrowserEditTests(unittest.TestCase):
             )
             page.evaluate(set_value_expr("extract-into", FIXTURE_PATH + "/" + UNPACK_DIR))
             page.evaluate("document.getElementById('btn-extract-ok').click()")
+            self.assertIn(UNPACK_DIR, self.wait_for_toast(page, "已解压", timeout=90))
             page.wait_for(
                 row_names_expr(UNPACK_DIR), timeout=90, message="解压之后列表里没有出现目标目录"
             )
@@ -426,6 +454,7 @@ class BrowserEditTests(unittest.TestCase):
                 ),
                 "确认框里没有「删除」按钮",
             )
+            self.assertIn(DELETE_FILE, self.wait_for_toast(page, "已删除"))
             page.wait_for(
                 "window.__awfm.rowNames().indexOf(" + js(DELETE_FILE) + ") < 0",
                 timeout=60,

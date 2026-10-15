@@ -74,6 +74,7 @@
 - **破坏性操作会跟着符号链接走**（阶段四写单元测试时发现，属真实缺陷）：原先删除 / 重命名 / 压缩都先把路径整条 `realpath`，于是「删除一个指向 `/home/aimu/real.txt` 的链接」实际删掉了 `real.txt`。修复为只对**父目录**做 `realpath`、最后一段不解析（`app/services/fileops.py` 的 `_canonical_entry_path`），并补了三条回归：改链接名不动目标、删链接保留目标、`链接以链接身份进包`。
 - 在线编辑保存曾经默认用 LF 写回，会把 CRLF 文件悄悄改成 LF；改为**默认沿用文件原有的换行风格**（`app/services/editor.py` 的 `save_text_file`，并新增只读头部的 `_peek` 用于探测风格）。
 - 解压目标目录不存在时原先直接报错，改为**创建最后一级**（只建一级；多级路径写错仍然报错，不静默造出一串空目录）。
+- **文件操作与保存后的成功提示显示 undefined**（阶段四收尾做 e2e 截图核对时发现，属真实缺陷）：后端把结果包成 §BT§{"entry": …}§BT§ / §BT§{"deleted": …}§BT§ / §BT§{"archive": …}§BT§ / §BT§{"extract": …}§BT§ 这样的信封，而 §BT§frontend/assets/js/fileops.js§BT§ 里除重命名外都直接读顶层字段，于是屏幕上出现「已删除「undefined」」——远端状态是对的，只有提示是错的（e2e 原本只核对远端，所以漏掉了）。修复为统一的 §BT§unwrap(data, key)§BT§：缺键时**抛错**而不是返回 undefined，§BT§tests/e2e/test_browser_edit.py§BT§ 新增 §BT§wait_for_toast§BT§ 断言提示文案里不含 §BT§undefined§BT§。
 
 ### 安全
 
