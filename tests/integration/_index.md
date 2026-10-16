@@ -12,7 +12,7 @@ python -m unittest discover -s tests/integration -t .
 | 文件 | 覆盖 |
 |---|---|
 | `support.py` | 公共支撑：定位测试床、构造连接配置、起临时 HTTP 服务、统计残留 ssh 进程（验收项 T-013）、`testbed_command` 造景、`search_fixture` 检索树（中文名 / 无权限目录 / 符号链接 / 目录环 / 大量文件）、`edit_fixture` / `ops_fixture` 编辑与文件操作夹具、`layout_fixture` 布局夹具（长中英文名 / 空格括号名 / 0 字节 / 12MiB / 压缩包 / 符号链接与断链 / 000-600-644-755 权限 / 2020 旧日期）、`upload_bytes` / `download_bytes` 走完整 HTTP 往返取字节、`Client.put`、发现扫描的发起与等待（`start_discovery_scan` / `wait_discovery_scan` / `scan_and_wait`） |
-| `test_launcher_lifecycle.py` | 统一启动器的真实生命周期（7 项，**不依赖 WSL 测试床**，自己用临时目录与空闲端口起真实子进程）：启动 → 重复启动（退出码 3 且不改动）→ 状态 → 日志 → 未确认的停止（拒绝且不杀进程）→ 确认停止 → 空转停止（3）→ 重启 → 再停；端口被占用时必须失败且不留 PID 文件；陈旧 PID 文件被识别并替换；无 tty 时菜单立即返回；`WrapperExitCodeTest` 再验 `run.bat` / `run.sh` 是否把退出码 3 / 2 原样传出（阶段三 D-B） |
+| `test_launcher_lifecycle.py` | 统一启动器的真实生命周期（13 项，**不依赖 WSL 测试床**，自己用临时目录与空闲端口起真实子进程）：启动 → 重复启动（退出码 3 且不改动）→ 状态 → 日志 → 未确认的停止（拒绝且不杀进程）→ 确认停止 → 空转停止（3）→ 重启 → 再停；端口被占用时必须失败且不留 PID 文件；陈旧 PID 文件被识别并替换；无 tty 时菜单立即返回；`WrapperExitCodeTest` 再验 `run.bat` / `run.sh` 是否把退出码 3 / 2 原样传出（阶段三 D-B）；阶段五补 5 项任务书 §5.2 的回归点：缺 ssh 客户端时拒绝启动且不留 PID 文件、端口不被占用；坏配置给出人话与 `--init-config` 出路（`status` 降级成警告、退出码 3）；从无关工作目录执行 `status` / `check` / `start` / `stop` 仍然正确；停止只动 PID 文件里那一个进程（旁边同为 python 的无关进程必须活下来）；外壳位于带空格的路径（`accept space/AWFM test`）时仍能找到同级 `launcher.py` |
 | `test_api_flow.py` | HTTP 主链路：连接 → 列目录 → 预览 → 上传 → 下载 → 断开（T-001 / T-003 / T-006 / T-009） |
 | `test_connection_flow.py` | 连接层主链路：真实 `ssh`/`sftp` 子进程、错误路径、进程清理 |
 | `test_password_auth.py` | 密码认证链路：断言服务端日志出现 `Failed password for <user>`（非 root 测试床读不到 /etc/shadow，所以只证明密码送达） |
