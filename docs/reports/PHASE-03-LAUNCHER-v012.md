@@ -214,6 +214,8 @@ D-A（全新目录无法启动）、D-B（外壳吞掉退出码）、D-C（重�
 
 ## 七、文档与交付物
 
+阶段三提交：`9b5abe1`（2026-10-17，29 个文件 / +2119 −123，基线 `9bbf7a3`）。
+
 代码：`scripts/launcher.py`（新建）、`run.bat` `run.sh`（新建）、`scripts/package.py`、`app/main.py`、`app/core/config.py`、`app/api/security.py`（注释端口）、`config/config.example.json`、`.gitattributes`。
 
 测试：`tests/unit/test_launcher.py`（新建）、`tests/unit/test_config.py`、`tests/integration/test_launcher_lifecycle.py`（新建）。
