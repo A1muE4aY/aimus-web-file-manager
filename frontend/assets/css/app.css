@@ -838,25 +838,56 @@ td.col-dir {
 
 /* ------------------------------------------------- 在线编辑与文件操作（v0.1.1 阶段四） */
 
-/* 文件列表的「操作」列要放得下三到五个按钮，比检索表的操作列宽得多；
-   窄窗口下不再固定宽度，让按钮自己换行。 */
-#file-table .col-action { width: 248px; text-align: right; }
+/* 文件列表用固定布局（v0.1.2 阶段二 2.2）。自动布局下列宽由内容撑开：
+   名字越长，「大小 / 类型 / 权限 / 修改时间」被挤压得越厉害，操作列整体右移，
+   窄窗口和 150% 缩放下按钮会被推出可视区（真实 CU 实测）。固定布局后每列
+   宽度只由下面这些规则决定，和文件名长短、有没有图标都无关。 */
+#file-table { table-layout: fixed; }
 
-.row-actions {
-  display: flex;
-  flex-wrap: wrap;
+/* 名字列吸收剩余宽度。这里写 auto 而不是百分比：百分比会与固定列抢宽度，
+   配合固定布局反而更容易把操作列挤出容器。名字再长也只影响它自己这一列，
+   截断后的完整名字有悬浮提示与键盘焦点两条路可看（2.3）。 */
+#file-table .col-name { width: auto; }
+
+#file-table .col-size { width: 96px; }
+#file-table .col-type { width: 88px; }
+#file-table .col-perm { width: 104px; }
+#file-table .col-time { width: 148px; }
+
+/* 五个动作固定成五个槽位。按钮由 grid-column 钉在自己那一列上，于是
+   「重命名」在任何一行、任何文件类型下都落在同一个横坐标：某一行少了
+   「编辑」或多出「解压」，只会让对应槽位空着，不会把别的按钮挤走。
+   5 × 52px + 4 × 4px 间隙 = 276px，加上单元格左右内边距 20px = 296px。 */
+#file-table .col-action { width: 296px; text-align: right; }
+
+#file-table .row-actions {
+  display: grid;
+  grid-template-columns: repeat(5, 52px);
   gap: 4px;
-  justify-content: flex-end;
+  justify-content: end;
 }
 
-.row-actions .btn {
-  padding: 2px 7px;
+#file-table .row-actions .btn {
+  width: 100%;
+  padding: 2px 0;
   font-size: 11.5px;
   line-height: 1.5;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.row-actions .btn-delete-entry { color: var(--danger); border-color: var(--danger); }
-.row-actions .btn-delete-entry:hover:not(:disabled) { background: var(--danger-weak); }
+#file-table .row-actions .btn-edit-entry { grid-column: 1; }
+#file-table .row-actions .btn-extract-entry { grid-column: 2; }
+#file-table .row-actions .btn-rename-entry { grid-column: 3; }
+#file-table .row-actions .btn-compress-entry { grid-column: 4; }
+#file-table .row-actions .btn-delete-entry { grid-column: 5; color: var(--danger); border-color: var(--danger); }
+#file-table .row-actions .btn-delete-entry:hover:not(:disabled) { background: var(--danger-weak); }
+
+/* 名字被截断时：鼠标悬浮有自绘的完整名称提示，键盘聚焦也看得到。
+   焦点环画在单元格上是内阴影，不会被 td 的 overflow:hidden 裁掉。 */
+#file-table .entry-name[data-truncated="true"] { cursor: help; }
+#file-table td.col-name:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
 
 /* 编辑器：文本域独占主体，下面一行是状态与按钮。 */
 .editor-body { display: flex; flex-direction: column; }
@@ -985,8 +1016,39 @@ td.col-dir {
   box-shadow: var(--shadow);
 }
 
-@media (max-width: 1100px) {
-  #file-table .col-action { width: auto; min-width: 160px; }
+/* 窗口不够宽时压缩操作列，而不是让它自己换行（换行就是按钮位置乱动的开始）：
+   槽位从 52px 收到 44px，5 × 44 + 4 × 4 = 236px，加内边距 260px，按钮仍然
+   固定对齐，只是名字列让出一点宽度。再窄下去依次收起「权限」「类型」两列，
+   并把操作列折成 3 + 2 两行固定槽位，始终给名字列留下可读宽度。 */
+@media (max-width: 1280px) {
+  #file-table .col-action { width: 260px; }
+  #file-table .row-actions { grid-template-columns: repeat(5, 44px); }
+}
+
+@media (max-width: 1120px) {
+  #file-table .col-perm, #file-table td.col-perm { display: none; }
+}
+
+/* 再窄就折成两行固定槽位：上行 编辑 / 解压 / 重命名，下行 压缩 / 删除。
+   槽位固定，所以按钮落在哪一格只由动作本身决定，与文件名长短无关；
+   少了某个动作的行空着那一格，按钮也不会左右挪动。 */
+@media (max-width: 1020px) {
+  #file-table .col-type, #file-table td.col-type { display: none; }
+  #file-table .col-action { width: 166px; }
+  #file-table .row-actions { grid-template-columns: repeat(3, 46px); grid-template-rows: auto auto; }
+  #file-table .row-actions .btn-edit-entry { grid-column: 1; grid-row: 1; }
+  #file-table .row-actions .btn-extract-entry { grid-column: 2; grid-row: 1; }
+  #file-table .row-actions .btn-rename-entry { grid-column: 3; grid-row: 1; }
+  #file-table .row-actions .btn-compress-entry { grid-column: 1; grid-row: 2; }
+  #file-table .row-actions .btn-delete-entry { grid-column: 2; grid-row: 2; }
+}
+
+/* 最后连修改时间也收起（≤820px 那条全局规则已经收起了权限与类型）。
+   150% 缩放时 CSS 视口只剩 ~660px，此时表格里只剩「名称 / 大小 / 操作」三列，
+   大小列再收掉一点，避免名字列被压到只剩几个字。 */
+@media (max-width: 820px) {
+  #file-table .col-time, #file-table td.col-time { display: none; }
+  #file-table .col-size { width: 64px; }
 }
 
 /* ------------------------------------------------- 在线虚拟机发现（v0.1.1 阶段五） */
@@ -1111,5 +1173,82 @@ td.col-dir {
 .discovery-empty { margin: 0; font-size: 12.5px; color: var(--text-faint); }
 .discovery-empty[hidden] { display: none; }
 .discovery-foot { margin: 0; font-size: 11.5px; color: var(--text-faint); overflow-wrap: anywhere; }
+
+/* ------------------------------------------- 自定义右键菜单与完整名称浮层（v0.1.2 阶段二）
+   两个浮层共用一套外壳：都是 fixed 定位、贴着一层边框与阴影，配色跟面板一致。
+   z-index 取 55/56：高于模态框（50），低于提示条（60）—— 菜单在模态之上不会被
+   盖住，而提示条仍然是最上层的东西。 */
+
+.overlay-menu {
+  position: fixed;
+  z-index: 55;
+  min-width: 200px;
+  max-width: 330px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.overlay-menu-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.overlay-menu-item:hover:not(:disabled),
+.overlay-menu-item:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+
+.overlay-menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.overlay-menu-item:disabled { color: var(--text-faint); cursor: default; }
+
+.overlay-menu-item.is-danger { color: var(--danger); }
+.overlay-menu-item.is-danger:hover:not(:disabled),
+.overlay-menu-item.is-danger:focus-visible { background: var(--danger-weak); }
+
+.overlay-menu-label { flex: 1 1 auto; white-space: nowrap; }
+
+.overlay-menu-hint {
+  flex: 0 1 auto;
+  max-width: 168px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overlay-menu-sep { height: 1px; margin: 4px 2px; background: var(--border); }
+
+.overlay-tooltip {
+  position: fixed;
+  z-index: 56;
+  max-width: 460px;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
 
 

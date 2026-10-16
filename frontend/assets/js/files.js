@@ -11,6 +11,7 @@ import {
   $,
   h,
   clear,
+  copyToClipboard,
   formatSize,
   formatTime,
   formatPermissions,
@@ -18,12 +19,17 @@ import {
   isArchiveName,
 } from "./util.js";
 import { entryIcon } from "./icons.js";
-import { toast, toastError, toastWarn } from "./toast.js";
+import { installContextMenu, showTooltip, hideTooltip, closeOverlays } from "./overlay.js";
+import { toast, toastOk, toastError, toastWarn } from "./toast.js";
 import { state, activeConnection, allowWrite, isConnected } from "./state.js";
 
 let deps = {
   onSelectionChange: function () {},
   onOpenFile: function () {},
+  // 下载与上传由 app.js 接到 transfer.js。这一层不直接 import 传输模块，
+  // 免得两个模块互相引用形成环。
+  onDownload: function () {},
+  onUpload: function () {},
   onPathChange: function () {},
   onEdit: function () {},
   onRename: function () {},
@@ -42,6 +48,29 @@ export function initFiles(hooks) {
   if (hooks) deps = Object.assign(deps, hooks);
   bindSortHeaders();
   bindRetry();
+  bindContextMenus();
+}
+
+/**
+ * 右键菜单的接线（v0.1.2 阶段二 2.5）。
+ *
+ * 两个安装点各管一件事：行上给「这条目能做什么」，空白处给「列表本身能做什么」。
+ * 祖先节点先收到事件，所以空白处那一个遇到行内的右键要放行，交给行菜单处理。
+ */
+function bindContextMenus() {
+  installContextMenu($("#file-body"), function (event) {
+    const row = event.target.closest ? event.target.closest("tr[data-name]") : null;
+    if (!row) return null;
+    const name = row.getAttribute("data-name");
+    const entry = state.entries.filter(function (item) {
+      return item.name === name;
+    })[0];
+    return entry ? fileMenuItems(entry) : null;
+  }, { label: "文件操作" });
+  installContextMenu($(".table-wrap"), function (event) {
+    if (event.target.closest && event.target.closest("tr[data-name]")) return null;
+    return containerMenuItems();
+  }, { label: "列表操作" });
 }
 
 /** 列表过期时横幅上的「重试」，重试的是当前路径本身。 */
@@ -241,9 +270,12 @@ function nameCompare(a, b) {
 
 function renderTable() {
   const body = $("#file-body");
+  // 重绘会把行整批换掉：挂在旧行上的菜单与提示必须先收掉（阶段二 2.5）。
+  closeOverlays();
   clear(body);
   const entries = sortEntries(state.entries);
   for (const entry of entries) body.appendChild(rowNode(entry));
+  markTruncatedNames();
   renderListStatus();
   renderEmptyHint();
   $("#entry-count").textContent = countText();
@@ -335,12 +367,36 @@ function rowNode(entry) {
 
   const nameCell = h("td", { class: "col-name" });
   const wrap = h("div", { class: "name-cell" }, entryIcon(entry.type, entry.link_broken));
-  wrap.appendChild(
-    h("span", {
-      class: "entry-name" + (entry.type === "symlink" ? " link" : ""),
-      text: entry.name,
-    })
-  );
+  // 名字列会被截断，所以完整名字在这里留三份：title（鼠标悬浮的原生提示）、
+  // aria-label（读屏）、data-full-name（自绘的完整名称浮层）。能不能聚焦由渲染
+  // 之后的测量决定 —— 名字没被截断的行不该多出一个 Tab 停留点。
+  const name = h("span", {
+    class: "entry-name" + (entry.type === "symlink" ? " link" : ""),
+    text: entry.name,
+    title: entry.name,
+    "data-full-name": entry.name,
+    "aria-label": entry.name,
+  });
+  name.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      event.stopPropagation();
+      activate(entry);
+    }
+  });
+  name.addEventListener("mouseenter", function () {
+    if (name.getAttribute("data-truncated") === "true") showTooltip(entry.name, name);
+  });
+  name.addEventListener("mouseleave", function () {
+    hideTooltip(name);
+  });
+  name.addEventListener("focus", function () {
+    if (name.getAttribute("data-truncated") === "true") showTooltip(entry.name, name);
+  });
+  name.addEventListener("blur", function () {
+    hideTooltip(name);
+  });
+  wrap.appendChild(name);
   if (entry.link_target) {
     wrap.appendChild(
       h("span", {
@@ -392,26 +448,31 @@ function actionCell(entry) {
   const conn = activeConnection();
   const writable = Boolean(conn && allowWrite(conn.id));
   const box = h("div", { class: "row-actions" });
+  // 五个动作用五个固定槽位：按钮由 CSS 按动作钉在自己的列上（grid-column），
+  // 于是「重命名」在任何一行、任何文件类型下都落在同一个横坐标，行与行之间
+  // 不会因为少了「编辑」或多出「解压」而错位（v0.1.2 阶段二 2.2）。
   const actions = [];
   if (entry.type === "file") {
-    actions.push(["编辑", "btn-edit-entry", true, function () { deps.onEdit(entry); }]);
+    actions.push({ key: "edit", label: "编辑", cls: "btn-edit-entry", enabled: true, run: function () { deps.onEdit(entry); } });
   }
   if (entry.type === "file" && isArchiveName(entry.name)) {
-    actions.push(["解压", "btn-extract-entry", writable, function () { deps.onExtract(entry); }]);
+    actions.push({ key: "extract", label: "解压", cls: "btn-extract-entry", enabled: writable, run: function () { deps.onExtract(entry); } });
   }
-  actions.push(["重命名", "btn-rename-entry", writable, function () { deps.onRename(entry); }]);
-  actions.push(["压缩", "btn-compress-entry", writable, function () { deps.onCompress(entry); }]);
-  actions.push(["删除", "btn-delete-entry", writable, function () { deps.onDelete(entry); }]);
+  actions.push({ key: "rename", label: "重命名", cls: "btn-rename-entry", enabled: writable, run: function () { deps.onRename(entry); } });
+  actions.push({ key: "compress", label: "压缩", cls: "btn-compress-entry", enabled: writable, run: function () { deps.onCompress(entry); } });
+  actions.push({ key: "delete", label: "删除", cls: "btn-delete-entry", enabled: writable, run: function () { deps.onDelete(entry); } });
   for (const action of actions) {
     box.appendChild(
       h("button", {
         type: "button",
-        class: "btn btn-small " + action[1],
-        text: action[0],
-        disabled: !action[2],
+        class: "btn btn-small " + action.cls,
+        "data-action": action.key,
+        text: action.label,
+        disabled: !action.enabled,
+        title: action.enabled ? action.label : "需要先打开「允许写操作」",
         onClick: function (event) {
           event.stopPropagation();
-          action[3]();
+          action.run();
         },
       })
     );
@@ -419,6 +480,114 @@ function actionCell(entry) {
   const cell = h("td", { class: "col-action" });
   cell.appendChild(box);
   return cell;
+}
+
+/**
+ * 名字没被截断的行不该多出 Tab 停留点，所以渲染完量一次：真截断了才给它
+ * tabindex 与 data-truncated，键盘用户按 Tab 就能停在名字上看到完整名字。
+ */
+function markTruncatedNames() {
+  const names = document.querySelectorAll("#file-body .entry-name");
+  for (const node of names) {
+    const truncated = node.clientWidth > 0 && node.scrollWidth > node.clientWidth + 1;
+    if (truncated) {
+      node.setAttribute("data-truncated", "true");
+      node.setAttribute("tabindex", "0");
+    } else {
+      node.removeAttribute("data-truncated");
+      node.removeAttribute("tabindex");
+    }
+  }
+}
+
+/** 复制名称 / 复制路径：成功失败都要给反馈，不能默默什么都不发生。 */
+async function copyText(text, what) {
+  const ok = await copyToClipboard(text);
+  if (ok) toastOk("已复制" + what + "：" + text);
+  else toastWarn("浏览器不允许自动复制，请手动选中后复制：" + text);
+}
+
+/**
+ * 文件行上的右键菜单。
+ *
+ * 只放「这个条目现在真能做的事」：目录没有预览/编辑/下载，非压缩包没有解压；
+ * 需要写权限的动作在只读连接下灰掉并说明原因（而不是藏起来，让人以为工具没做）。
+ */
+function fileMenuItems(entry) {
+  const conn = activeConnection();
+  const connected = Boolean(conn && isConnected(conn.id));
+  const writable = Boolean(conn && allowWrite(conn.id));
+  const writeHint = writable ? "" : "需要先打开「允许写操作」";
+  const isFile = entry.type === "file";
+  const items = [];
+  if (!connected) return items;
+  if (entry.type === "directory") {
+    items.push({ label: "打开目录", hint: "进入这个目录", onSelect: function () { activate(entry); } });
+  } else if (isFile) {
+    items.push({ label: "预览", hint: "只读地看一眼内容", onSelect: function () { deps.onOpenFile(entry); } });
+    items.push({
+      label: "编辑",
+      hint: "在线修改并保存",
+      onSelect: function () { deps.onEdit(entry); },
+    });
+  } else {
+    items.push({ label: "打开（跟随符号链接）", hint: entry.link_target || "", onSelect: function () { activate(entry); } });
+  }
+  if (isFile) {
+    items.push({ label: "下载", hint: "保存到本机", onSelect: function () { deps.onDownload(entry); } });
+  }
+  if (isFile && isArchiveName(entry.name)) {
+    items.push({
+      label: "解压",
+      hint: writable ? "解压到当前目录" : writeHint,
+      disabled: !writable,
+      onSelect: function () { deps.onExtract(entry); },
+    });
+  }
+  items.push({ separator: true });
+  items.push({
+    label: "重命名",
+    hint: writable ? "" : writeHint,
+    disabled: !writable,
+    onSelect: function () { deps.onRename(entry); },
+  });
+  items.push({
+    label: "压缩成 .tar.gz",
+    hint: writable ? "" : writeHint,
+    disabled: !writable,
+    onSelect: function () { deps.onCompress(entry); },
+  });
+  items.push({
+    label: "删除",
+    danger: true,
+    hint: writable ? "删除前还会再确认一次" : writeHint,
+    disabled: !writable,
+    onSelect: function () { deps.onDelete(entry); },
+  });
+  items.push({ separator: true });
+  items.push({ label: "复制名称", hint: "只复制文件名", onSelect: function () { copyText(entry.name, "名称"); } });
+  items.push({ label: "复制完整路径", hint: entry.path, onSelect: function () { copyText(entry.path, "路径"); } });
+  return items;
+}
+
+/** 列表空白处的右键菜单：只放列表本身的操作，不冒充某个条目。 */
+function containerMenuItems() {
+  const conn = activeConnection();
+  if (!conn || !isConnected(conn.id)) return [];
+  const writable = allowWrite(conn.id);
+  const items = [
+    { label: "刷新列表", hint: "重新读取当前目录", onSelect: function () { refresh(); } },
+  ];
+  if (state.parent) {
+    items.push({ label: "返回上一级", hint: state.parent, onSelect: function () { goUp(); } });
+  }
+  items.push({
+    label: "上传文件…",
+    hint: writable ? "选择本机文件上传到当前目录" : "需要先打开「允许写操作」",
+    disabled: !writable,
+    onSelect: function () { deps.onUpload(); },
+  });
+  return items;
 }
 
 function select(entry) {

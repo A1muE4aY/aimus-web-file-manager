@@ -16,6 +16,7 @@
 | `fileops.js` | 文件操作（v0.1.1）：重命名、删除、压缩、解压，以及各操作的确认与结果提示 |
 | `discovery.js` | 在线虚拟机发现（v0.1.1 阶段五）：侧栏「扫描」入口、环境与来源状态、扫描进度与中止、结果表分「发现虚拟机 / 地址在线 / SSH 可用」三态、从某一行「创建连接」时预填既有表单（只是候选，保存与指纹确认仍走原路） |
 | `preview.js` | 文本预览：编码与截断提示 |
+| `overlay.js` | 自绘浮层（v0.1.2 阶段二）：右键菜单（`openMenu`/`closeMenu`/`installContextMenu`，capture 阶段拦截 `contextmenu`，视口边自动翻边）与完整名称提示（`showTooltip`/`hideTooltip`）。输入框、文本域、`[contenteditable]`、`.editor-text` 命中 `isNativeTextTarget` 时放行原生菜单 |
 | `modal.js` | 模态框：标题/正文/按钮，焦点与 Esc 关闭 |
 | `toast.js` | 轻提示：成功/失败/信息，自动消失 |
 | `icons.js` | 内联 SVG 图标（离线，不引外部图标库） |
@@ -24,3 +25,5 @@
 
 * `api.js` 的 `request()` 返回的是 `payload.data`，调用方要自己取内层键（例如 `data.connections`）。
 * 打开目录要 `dblclick`，单击只是选中。
+* `overlay.js` 的菜单与提示挂在 `document.body` 上，不会随表格重绘消失：`renderTable()` 必须在重绘前调用 `closeOverlays()`（`files.js:271`），否则会留下指向已不存在行的菜单。
+* `installContextMenu` 的 `build(event)` 返回 `null` 或空数组时**不拦截**原生菜单——这是「输入框里仍要能粘贴」的实现方式，不要改成无条件 `preventDefault`。

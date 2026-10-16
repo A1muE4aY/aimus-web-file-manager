@@ -513,6 +513,86 @@ def ops_fixture():
     return _testbed_fixture(_OPS_FIXTURE_SCRIPT, OPS_FIXTURE_ROOT)
 
 
+# --------------------------------------------------- v0.1.2 阶段二造景
+
+#: 布局夹具的默认位置。端到端用例更愿意把它摆在家目录下（应用以家目录为根），
+#: 所以 layout_fixture() 允许传自己的 root。
+LAYOUT_FIXTURE_ROOT = "/tmp/awfm-layout-fixture"
+
+LAYOUT_SHORT = "short.txt"
+LAYOUT_LONG_DIR = "a-directory-with-a-rather-long-name-for-layout-testing"
+LAYOUT_LONG_EN = (
+    "this-is-a-very-long-english-file-name-that-needs-truncation-in-the-name-column-"
+    "0123456789.txt"
+)
+LAYOUT_LONG_ZH = "这是一个非常长的中文文件名用来测试截断显示与完整名称查看方式的示例文件.txt"
+LAYOUT_ODD_NAME = "name with spaces (and parens) [and brackets].txt"
+LAYOUT_ZERO = "zero-byte.txt"
+LAYOUT_BIG = "big-12MiB.bin"
+LAYOUT_ARCHIVE = "archive-sample.tar.gz"
+LAYOUT_BACKING = "pack-me.txt"
+LAYOUT_OLD = "old-2020.txt"
+LAYOUT_PERMS = ("perm-000.txt", "perm-600.txt", "perm-644.txt", "perm-755.sh")
+LAYOUT_LINK = "link-to-short.txt"
+LAYOUT_BROKEN_LINK = "broken-link.txt"
+LAYOUT_TARGET = "link-target.txt"
+
+#: 文件列表布局 / 完整名称 / 右键菜单用的夹具（v0.1.2 阶段二）。
+#: 素材刻意把「长英文名、长中文名、空格括号名、0 字节、大文件、压缩包、符号链接与
+#: 断链、000/600/644/755 四种权限、2020 年的旧时间」摆齐 —— 列宽与按钮槽位是不是
+#: 稳定，只有在这些行同时出现时才看得出来。
+_LAYOUT_FIXTURE_SCRIPT = r"""
+set -e
+root=__ROOT__
+chmod -R u+rwX "$root" 2>/dev/null || true
+rm -rf "$root"
+mkdir -p "$root/__LONG_DIR__"
+printf 'x\n' > "$root/__SHORT__"
+printf 'x\n' > "$root/__LONG_EN__"
+printf 'x\n' > "$root/__LONG_ZH__"
+printf 'x\n' > "$root/__ODD__"
+: > "$root/__ZERO__"
+printf 'x\n' > "$root/__PERM0__"; chmod 000 "$root/__PERM0__"
+printf 'x\n' > "$root/__PERM6__"; chmod 600 "$root/__PERM6__"
+printf 'x\n' > "$root/__PERM4__"; chmod 644 "$root/__PERM4__"
+printf 'x\n' > "$root/__PERM7__"; chmod 755 "$root/__PERM7__"
+printf 'x\n' > "$root/__OLD__"; touch -d '2020-01-02 03:04' "$root/__OLD__"
+truncate -s 12M "$root/__BIG__" 2>/dev/null || head -c 12582912 /dev/zero > "$root/__BIG__"
+printf 'payload\n' > "$root/__BACKING__"
+tar -czf "$root/__ARCHIVE__" -C "$root" __BACKING__
+printf 'target\n' > "$root/__TARGET__"
+ln -sf "$root/__TARGET__" "$root/__LINK__"
+ln -sf "$root/no-such-target.txt" "$root/__BROKEN__"
+echo READY
+"""
+
+
+def layout_fixture(root: str = LAYOUT_FIXTURE_ROOT):
+    """文件列表布局与右键菜单用的夹具。yield 根目录。"""
+    script = _LAYOUT_FIXTURE_SCRIPT
+    for token, value in (
+        ("__LONG_DIR__", LAYOUT_LONG_DIR),
+        ("__SHORT__", LAYOUT_SHORT),
+        ("__LONG_EN__", LAYOUT_LONG_EN),
+        ("__LONG_ZH__", LAYOUT_LONG_ZH),
+        ("__ODD__", LAYOUT_ODD_NAME),
+        ("__ZERO__", LAYOUT_ZERO),
+        ("__PERM0__", LAYOUT_PERMS[0]),
+        ("__PERM6__", LAYOUT_PERMS[1]),
+        ("__PERM4__", LAYOUT_PERMS[2]),
+        ("__PERM7__", LAYOUT_PERMS[3]),
+        ("__OLD__", LAYOUT_OLD),
+        ("__BIG__", LAYOUT_BIG),
+        ("__BACKING__", LAYOUT_BACKING),
+        ("__ARCHIVE__", LAYOUT_ARCHIVE),
+        ("__TARGET__", LAYOUT_TARGET),
+        ("__LINK__", LAYOUT_LINK),
+        ("__BROKEN__", LAYOUT_BROKEN_LINK),
+    ):
+        script = script.replace(token, value)
+    return _testbed_fixture(script, root)
+
+
 def connection_url(connection_id: str, suffix: str, *, path: str = "") -> str:
     """拼一个带 path 查询参数的连接级接口地址（路径按 URL 规则编码）。"""
     url = "/api/connections/%s/%s" % (quote(connection_id, safe=""), suffix)

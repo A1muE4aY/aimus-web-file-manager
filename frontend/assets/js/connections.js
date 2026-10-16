@@ -9,8 +9,9 @@
  */
 
 import * as api from "./api.js";
-import { $, h, clear, formatTime } from "./util.js";
+import { $, h, clear, copyToClipboard, formatTime } from "./util.js";
 import { toast, toastOk, toastError, toastWarn } from "./toast.js";
+import { installContextMenu } from "./overlay.js";
 import { confirmDialog, openModal, closeModal, infoDialog } from "./modal.js";
 import { state, connectionById, isConnected } from "./state.js";
 
@@ -18,6 +19,70 @@ let deps = { onEnter: function () {}, onLeave: function () {} };
 
 export function initConnections(hooks) {
   if (hooks) deps = Object.assign(deps, hooks);
+  installContextMenu($("#conn-list"), function (event) {
+    const card = event.target.closest ? event.target.closest("li.conn-item") : null;
+    if (!card) return null;
+    const id = card.getAttribute("data-id");
+    const item = connectionById(id);
+    return item ? connectionMenuItems(item) : null;
+  }, { label: "连接操作" });
+}
+
+/** 复制一律给反馈：成功说清复制了什么，失败告诉用户自己选中。 */
+async function copyField(text, what) {
+  const ok = await copyToClipboard(text);
+  if (ok) toastOk("已复制" + what + "：" + text);
+  else toastWarn("浏览器不允许自动复制，请手动选中后复制：" + text);
+}
+
+/**
+ * 连接卡片上的右键菜单。
+ *
+ * 和文件列表同一个道理：菜单里只放这张卡片现在真能做的事。已连接时给
+ * 「浏览 / 断开」，没连接时才给「连接」；连接中的卡片把「连接」灰掉，
+ * 免得连点两次。删除仍然走原来的确认流程（doDelete 里会弹确认框）。
+ */
+function connectionMenuItems(item) {
+  const session = item.session || {};
+  const connected = Boolean(session.connected);
+  const connecting = session.state === "connecting";
+  const label = targetLabel(item);
+  const items = [];
+  if (connected) {
+    items.push({
+      label: "浏览文件",
+      hint: "在右侧打开这条连接",
+      onSelect: function () { openConnection(item.id); },
+    });
+    items.push({
+      label: "断开",
+      hint: "远端文件不受影响",
+      onSelect: function () { doDisconnect(item.id); },
+    });
+  } else {
+    items.push({
+      label: connecting ? "正在连接…" : "连接",
+      hint: connecting ? "等这一次连接有结果" : "建立到 " + label + " 的 SSH 会话",
+      disabled: connecting,
+      onSelect: function () { connectFlow(item.id); },
+    });
+  }
+  items.push({ separator: true });
+  items.push({
+    label: "编辑配置",
+    hint: "名称、地址、登录方式",
+    onSelect: function () { openConnectionForm(item); },
+  });
+  items.push({
+    label: "删除连接",
+    danger: true,
+    hint: "只会删掉本地这份配置，远端文件不会动",
+    onSelect: function () { doDelete(item); },
+  });
+  items.push({ separator: true });
+  items.push({ label: "复制名称", hint: item.name || item.id, onSelect: function () { copyField(item.name || item.id, "名称"); } });
+  items.push({ label: "复制地址", hint: label, onSelect: function () { copyField(label, "地址"); } });
+  return items;
 }
 
 // 四种状态各给一句人话，并且彼此明显不同（2.md 阶段二要求区分

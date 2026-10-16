@@ -62,6 +62,41 @@ export function clear(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
+/**
+ * 复制一段文本到剪贴板，返回是否成功。
+ *
+ * 为什么要返回布尔值：复制失败时界面必须说一声。默默什么都不发生的话，用户
+ * 会以为复制好了，粘贴出来却是上一次的内容。navigator.clipboard 只在安全
+ * 上下文里存在（127.0.0.1 算，局域网地址不算），所以保留 execCommand 兜底。
+ */
+export async function copyToClipboard(text) {
+  const value = String(text === null || text === undefined ? "" : text);
+  if (!value) return false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch (error) {
+    // 落到下面的兜底路径。
+  }
+  try {
+    const area = document.createElement("textarea");
+    area.value = value;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "-1000px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand("copy");
+    area.remove();
+    return Boolean(ok);
+  } catch (error) {
+    return false;
+  }
+}
+
 /** 元素里已有的文本（用于 aria-label 之类）。 */
 export function setText(node, text) {
   node.textContent = text;

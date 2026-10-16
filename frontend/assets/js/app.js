@@ -267,6 +267,14 @@ async function boot() {
   files.initFiles({
     onSelectionChange: updateToolbar,
     onOpenFile: handleOpenFile,
+    // 右键菜单里的「下载」「上传文件…」走的还是工具栏那两个入口，
+    // 菜单只是把已经存在的能力放到鼠标底下（v0.1.2 阶段二 2.5）。
+    onDownload: function (entry) {
+      transfer.downloadEntry(entry);
+    },
+    onUpload: function () {
+      $("#file-input").click();
+    },
     onPathChange: updateToolbar,
     onEdit: handleEdit,
     onRename: handleRename,

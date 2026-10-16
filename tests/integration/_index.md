@@ -11,7 +11,7 @@ python -m unittest discover -s tests/integration -t .
 
 | 文件 | 覆盖 |
 |---|---|
-| `support.py` | 公共支撑：定位测试床、构造连接配置、起临时 HTTP 服务、统计残留 ssh 进程（验收项 T-013）、`testbed_command` 造景、`search_fixture` 检索树（中文名 / 无权限目录 / 符号链接 / 目录环 / 大量文件）、`edit_fixture` / `ops_fixture` 编辑与文件操作夹具、`upload_bytes` / `download_bytes` 走完整 HTTP 往返取字节、`Client.put`、发现扫描的发起与等待（`start_discovery_scan` / `wait_discovery_scan` / `scan_and_wait`） |
+| `support.py` | 公共支撑：定位测试床、构造连接配置、起临时 HTTP 服务、统计残留 ssh 进程（验收项 T-013）、`testbed_command` 造景、`search_fixture` 检索树（中文名 / 无权限目录 / 符号链接 / 目录环 / 大量文件）、`edit_fixture` / `ops_fixture` 编辑与文件操作夹具、`layout_fixture` 布局夹具（长中英文名 / 空格括号名 / 0 字节 / 12MiB / 压缩包 / 符号链接与断链 / 000-600-644-755 权限 / 2020 旧日期）、`upload_bytes` / `download_bytes` 走完整 HTTP 往返取字节、`Client.put`、发现扫描的发起与等待（`start_discovery_scan` / `wait_discovery_scan` / `scan_and_wait`） |
 | `test_api_flow.py` | HTTP 主链路：连接 → 列目录 → 预览 → 上传 → 下载 → 断开（T-001 / T-003 / T-006 / T-009） |
 | `test_connection_flow.py` | 连接层主链路：真实 `ssh`/`sftp` 子进程、错误路径、进程清理 |
 | `test_password_auth.py` | 密码认证链路：断言服务端日志出现 `Failed password for <user>`（非 root 测试床读不到 /etc/shadow，所以只证明密码送达） |
