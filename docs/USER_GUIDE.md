@@ -693,6 +693,8 @@ v0.1.1 新增（阶段五：在线虚拟机自动发现）。整段都可以不�
 
 如果这条也连不上，问题在目标机或网络，与 AWFM 无关。
 
+从这一步往下逐层排查（服务端 sshd、客户端环境、认证方式、虚拟机网络）请用配套教程 `docs/SSH_SETUP_GUIDE.md`：它的 J 节给了 16 类报错的**原文**、可能原因、检查顺序与安全修复方向，L 节是一份 8 步快速排查清单加一页速查表；教程里凡未在本机实测过的命令都带【需管理员】或【未验证】标记（决策 D-021），附录 B 汇总了验证范围。
+
 ---
 
 ## 12 安全注意事项
@@ -821,3 +823,5 @@ run.bat（Linux / macOS 是 run.sh）是唯一入口，双击就出菜单：启�
 - docs/PROJECT_STRUCTURE.md —— 目录纪律
 - docs/reports/PHASE-01-ENVIRONMENT.md —— 本机环境实测（Windows 11 / Python 3.12.10 / OpenSSH 9.5p2）
 - docs/reports/PHASE-02-SPIKE.md —— SFTP 层实测、ssh-keyscan 不可用、icacls 教训（R-05）
+- docs/SSH_SETUP_GUIDE.md —— SSH 配置教程（A~L + 两个附录）：怎么配服务端与客户端、密码与密钥认证、虚拟机网络、AWFM 连接配置、16 类错误对照与安全建议；关键步骤实测留档，未验证项逐处标注
+- docs/DECISIONS.md D-021 —— 教程中未在本机实测的命令必须显式标注验证状态

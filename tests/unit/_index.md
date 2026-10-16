@@ -31,4 +31,5 @@ python -m unittest discover -s tests/unit -t .
 | `fake_sftp.py` | 内存版 SFTP 假件（不是 mock）：真跑 tar/zip 字节流与权限语义、rename 不覆盖、offline 抛 NotConnected，供在线编辑与文件操作单测使用 |
 | `test_editor.py` | 在线编辑（43 项）：文本识别与二进制/非 UTF-8 拒绝、换行与 BOM 记忆、sha256/mtime 冲突、备份改名与回滚、无残留临时文件 |
 | `test_fileops.py` | 文件操作（60 项）：重命名、递归删除的预算与深度、压缩包布局与符号链接以链接本身入包、解压的越界拒绝与覆盖策略 |
+| `test_ssh_guide.py` | SSH 教程与实现的「不许各说各话」检查（13 项）：A~L 章节齐全且有序、`build_sftp_command` 实际发出的每个 `-o` 选项键都在教程附录 A 有记录、附录里的 `ConnectTimeout` / `ServerAliveInterval` / `known_hosts` 默认值与 `app/core/config.py` 的 `DEFAULTS` 一致、`AUTH_METHODS` 两种认证方式各有章节、网页端口取自配置且写明「不是 SSH 服务端」、验证状态标记与「不出现私钥材料/模板标记」纪律（决策 D-021） |
 | `test_discovery.py` | 在线虚拟机发现（48 项）：五层取材的解析函数用真实格式样本（清单 / `.vmx` / DHCP 租约 / `vmnetdhcp.conf` / 邻居表 / `arp -a`）、探测四态用假 socket、三态融合用临时环境 + 注入探测、注册处的忙 / 取消 / 保留上限 |
