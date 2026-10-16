@@ -159,10 +159,10 @@
 | 预检一律 403，不发任何 CORS 允许头 | `app/api/http_server.py:132` |
 | 方法校验：路由器按 `^pattern$` 匹配，命中路径但方法不符时返回 `invalid_request`（400）并在 `detail` 里列出允许的方法 | `app/api/router.py:49`、`app/api/http_server.py:179` |
 | 参数校验：`require_query`（缺失或空串都拒绝）、`query_bool`（只接受固定取值）、`query_int` | `app/api/request.py:47`、`:53`、`:64` |
-| 请求体限额：JSON 体 1 MiB（`MAX_JSON_BODY`），超限 `payload_too_large` | `app/api/request.py:21`、`:92` |
+| 请求体限额：JSON 体默认 1 MiB（`MAX_JSON_BODY`），超限 `payload_too_large`；保存在线编辑按 `security.max_edit_bytes` 放宽（`text_body_limit()`），其余接口不动 | `app/api/request.py:24`、`:34`、`:92` |
 | 会话权限：所有文件端点都经 `ConnectionManager.session()` 取**已连接**的会话；连接不存在 → `connection_not_found`（404），存在但未连接 → `session_not_found`（404），两种都不会绕过会话直接读远端 | `app/services/connection_manager.py:235` |
 | 写权限：连接级开关 `allow_write`，默认关闭；上传前由 `require_write_permission` 把门，未开启抛 `unauthorized`（「该连接未开启写权限，无法上传文件。」）——这是最内层的一道门禁，即使上层漏判也写不动 | `app/services/filesystem.py:179` |
-| 连接纪律：请求体没读完的请求，响应后强制断开连接，避免 keep-alive 连接上的字节错位 | `app/api/http_server.py:144` 的 `finally` 段 |
+| 连接纪律：请求体没读完的请求，响应后强制断开连接，避免 keep-alive 连接上的字节错位；回错误前先排空请求体（超时 5 秒） | `app/api/http_server.py:144` 的 `finally` 段、`:217` `_discard_request_body` |
 | 下载另走短时票据（120 秒、绑定连接与路径、仅内存），避免把长期令牌放进 URL（URL 会留在浏览器历史里，而且令牌能调用全部接口） | `app/api/tickets.py`、`app/api/security.py:132` |
 
 **残余风险**
@@ -204,7 +204,7 @@
 | 下载大小 | `security.max_download_bytes`（`0` = 不限） | 0 | `app/services/transfer.py:44` `prepare_download` |
 | 文本预览 | `DEFAULT_PREVIEW_BYTES`，且接口层再夹一次 `[1, 262144]` | 262144（256 KiB） | `app/services/filesystem.py:38`、`app/api/handlers.py:147-148` |
 | 单次列目录条目 | `MAX_LIST_ENTRIES`（先排序再截断） | 5000 | `app/services/filesystem.py:41` |
-| JSON 请求体 / 响应体 | `MAX_JSON_BODY` / `MAX_JSON_BYTES` | 1 MiB / 8 MiB | `app/api/request.py:21`、`app/api/responses.py:29` |
+| JSON 请求体 / 响应体 | `MAX_JSON_BODY` / `MAX_JSON_BYTES`（文本保存按 `security.max_edit_bytes` 放宽） | 1 MiB / 8 MiB | `app/api/request.py:24`、`:34`、`app/api/responses.py:29` |
 | 单个 SFTP 帧 | `MAX_FRAME_BYTES`（同时让「把 ASCII 当长度」立刻暴露，而不是试图分配几个 GB） | 4 MiB | `app/ssh/sftp_protocol.py:135` |
 | 单次读写块 | `MAX_READ_CHUNK` / `DEFAULT_CHUNK_SIZE` | 64 KiB（D-007） | `app/ssh/sftp_protocol.py:130`、`app/ssh/sftp_client.py` |
 | 单次 WRITE 帧 | `MAX_WRITE_CHUNK`（超过就拆帧；服务端整包上限 `OPENSSH_MAX_PACKET_BYTES` = 256 KiB，超限会被 sftp-server 掐断连接） | 64 KiB（D-007、D-019） | `app/ssh/sftp_protocol.py`、`app/ssh/sftp_client.py` `write_chunk` |

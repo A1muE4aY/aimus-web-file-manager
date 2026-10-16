@@ -18,6 +18,38 @@
 - **日期**：ISO `YYYY-MM-DD`。
 - **维护方式**：**人工维护**，不自动生成。变更发生时同步写，而不是发版前一次性补记。
 
+## [v0.1.2] — 未发布
+
+- **版本号**：`0.1.2`（开发中；`app/__init__.py` 尚未改号，按任务书 §7.1 在阶段七统一升号并重新打包）。
+- **状态**：开发中。阶段一（遗留问题复核与基线检查）已完成：v0.1.1 留下的六项遗留逐项复核，修复两个已确认的高优先级缺陷 D1、D2，新增 25 项回归用例，四层合计 744 项全绿（0 失败 / 0 错误 / 0 跳过），并在真实桌面 CU 上对两个缺陷做了端到端复验。证据与结论见 `docs/reports/PHASE-01-LEGACY-v012.md`。
+- **起始日期**：2026-10-17。
+- **依据**：`dev_guide/0.1.2_.md`（用户提供的接力任务书，工作区未跟踪文件）。
+- **提交纪律**：阶段一独立提交 `24fd0b2`（2026-10-17，「阶段 01（v0.1.2）：遗留问题复核、D1/D2 缺陷修复与回归」，20 个文件 / +889 −33）。用户既有的 `0.md`/`1.md`/`2.md` 暂存删除与未跟踪的 `dev_guide/` **未被该提交包含**，原样留在工作区（任务书 §7.2「不覆盖未提交修改」）。
+
+### 阶段进度（依据 dev_guide/0.1.2_.md 的七阶段）
+
+| 阶段 | 名称 | 状态 | 可核实的产物 |
+| --- | --- | --- | --- |
+| 一 | 检查遗留问题与当前基线 | 已完成 | 六项遗留复核结论（①④⑤⑥通过、②部分、③确认缺陷 D1、⑤确认缺陷 D2）；D1 两层与 D2 的修复；新增回归 25 项（`tests/unit/test_request.py`、`tests/unit/test_broken_session.py`、`tests/unit/test_sftp_client.py`、`tests/integration/test_connection_flow.py`、`tests/integration/test_edit_api.py`）；决策 D-019；阶段报告 `docs/reports/PHASE-01-LEGACY-v012.md` |
+| 二~七 | 文件列表布局与右键菜单 / 统一启动脚本 / SSH 配置教程 / 回归与安全检查 / 真实桌面 CU 验收 / 版本与交付 | 未开始 | — |
+
+### 修复
+
+- **1 MiB~2 MiB 的文件「能打开、存不回去」**（阶段一 D1 第一层）：传输层上限 `app/api/request.py:24` `MAX_JSON_BODY` 固定 1 MiB，而「能打开多大文件」由 `security.max_edit_bytes`（`app/core/config.py:61`/`:145`，默认 2 MiB）决定，两者不一致；且服务端在读请求体之前就回 413 并关连接，浏览器上传没结束就断，前端只看到「保存失败：Failed to fetch 内容还在编辑器里，可以重试或先复制出去。」。现在 `PUT …/text` 用 `text_body_limit(max_edit_bytes)`（`app/api/request.py:34`、`app/api/http_server.py:244`），回错误前先排空请求体（`app/api/http_server.py:217`，超时 `:68` `DRAIN_TIMEOUT_SECONDS = 5.0`），其余接口仍按 1 MiB 通用上限（`app/api/request.py:136`）。
+- **256 KiB 以上的文件保存必然断连**（阶段一 D1 第二层）：OpenSSH 的 `sftp-server` 用 `SFTP_MAX_MSG_LENGTH`（256 KiB）限制**整包**长度，超限时直接结束连接，客户端收不到 `STATUS`、只看到「写入远端失败：连接已断开」，会被误判成网络问题；`app/services/editor.py:342` 把在线编辑的整份文本当一帧写出即触发。现在 `SftpClient.write_chunk`（`app/ssh/sftp_client.py:179`）按 `MAX_WRITE_CHUNK`（64 KiB，`app/ssh/sftp_protocol.py:143`）自动拆帧，一次性覆盖上传、覆盖写、在线编辑保存与压缩打包四条路径；`OPENSSH_MAX_PACKET_BYTES`（`:137`）把服务端整包上限钉在代码里。实测边界（WSL 测试床 OpenSSH_9.6p1）：261120 字节可、262144 字节断。见决策 D-019。
+- **被动掉线后无法恢复**（阶段一 D2）：传输层抛出的 `NotConnected` 只作为单次请求的错误返回，没有任何地方把会话标死——侧栏卡片仍显示绿色「已连接」，横幅按钮是「重试」，点下去只是对同一个已死会话重发请求，CentOS 上也不会出现新的 `sftp-server` 进程。现在 `RemoteSession.mark_broken`（`app/services/session.py:339`）与 `ConnectionManager.mark_broken`（`app/services/connection_manager.py:285`）把会话与连接状态一并标死，`app/api/http_server.py:261` 统一收口；前端在掉线时把横幅按钮改成「重新连接」（`frontend/assets/js/files.js:276-279`），重连成功后回到原目录（`frontend/assets/js/app.js:276` 的 `onReconnect`、`frontend/assets/js/connections.js:204`/`:252`/`:263`）。
+
+### 变更
+
+- 新增决策 **D-019**「单次 SFTP WRITE = 最多 64 KiB，超过就拆帧」（`docs/DECISIONS.md`、`docs/ARCHITECTURE.md` 决策表、`docs/SECURITY.md` 资源上限表同步补行）。
+- `app/api/request.py` 增加 `text_body_limit()` 与 `json(max_bytes=…)`：只有明确在收文本的路径才放宽请求体上限；`docs/API.md` §2.1 与错误表、`docs/SECURITY.md` 的两处限额条目一并更正（含被改写后的新行号）。
+
+### 已知限制
+
+- 遗留⑥「发行包在独立目录（含空格路径）启动」只能在**同机**验证：本机只有一台 Windows 宿主机，没有第二台无 Python/OpenSSH 的干净机器。
+- 非 VMware 平台（VirtualBox / Hyper-V / KVM）的虚拟机发现仍未验证；「一次扫描出现多条同 IP」与「扫描期间 IP 变化」仍无真机样本（真实出现的只有「租约地址已过期，只能当作线索」）。
+- v0.1.1 遗留未验证项与人工介入点见 `docs/reports/PHASE-06-CU-ACCEPTANCE.md` §5；阶段一对它们的逐条复核结论见 `docs/reports/PHASE-01-LEGACY-v012.md` §6.2（④⑤⑥ 已消除、① 部分消除、② 仍未验证）。
+
 ## [v0.1.1] — 2026-10-16（未打标签）
 
 - **版本号**：`0.1.1`（`app/__init__.py:7`，阶段六统一改号并重新打包）。

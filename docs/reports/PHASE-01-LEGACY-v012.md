@@ -213,7 +213,7 @@ e2e 层证据截图：\`tests/e2e/artifacts/browser-journey-e0d2f46e.png\`。
 | 测试 | \`tests/unit/test_request.py\`、\`tests/unit/test_broken_session.py\`（新）、\`tests/unit/test_sftp_client.py\`（新）、\`tests/integration/test_connection_flow.py\`、\`tests/integration/test_edit_api.py\` |
 | 证据（会话中转，可清空） | \`.temp/cu-v012/\` 截图与配置（\`config.json\`、\`known_hosts\`）、\`.temp/probe_big_save.py\`、\`.temp/probe_big_save*.log\`、\`.temp/full-test-v012.log\`、\`.temp/it-edit.log\` |
 | 改动规模 | \`git diff --stat\`：19 files changed, 459 insertions(+), 856 deletions(-)（其中 -823 行为用户既有的 \`0.md\`/\`1.md\`/\`2.md\` 暂存删除，与本阶段无关） |
-| 未做提交 | 本阶段**未执行 git commit**：用户的暂存删除与未跟踪目录原样保留，提交动作按任务书 §7.2 在阶段七统一处理 |
+| 提交 | 阶段一独立提交 `24fd0b2`（2026-10-17，「阶段 01（v0.1.2）：遗留问题复核、D1/D2 缺陷修复与回归」，20 个文件 / +889 −33）；用户的 `0.md`/`1.md`/`2.md` 暂存删除与未跟踪的 `dev_guide/` **未被该提交包含**，原样留在工作区 |
 
 ---
 

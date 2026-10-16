@@ -41,8 +41,8 @@
 | 必填查询参数 | `require_query(name)`：参数缺失**或为空串**都抛 `invalid_request`，消息为「缺少必需的查询参数 <name>。」 | `app/api/request.py:47` |
 | 布尔查询参数 | `query_bool(name, default)`：`1/true/yes/on` 为真，`0/false/no/off` 为假，其它值抛 `invalid_request` | `app/api/request.py:53` |
 | 整数查询参数 | `query_int(name, default)`：非法值抛 `invalid_request` | `app/api/request.py:64` |
-| JSON 请求体 | 上限 `MAX_JSON_BODY = 1024 * 1024`（1 MiB），超限抛 `payload_too_large`；空体视为 `{}`；非 UTF-8 或非法 JSON 抛 `invalid_request`（消息里带行号列号）；顶层不是对象也抛 `invalid_request` | `app/api/request.py:21`、`:92` |
-| 请求体读取纪律 | 请求体没读完的请求会在响应后强制断开连接，防止 keep-alive 连接上的字节错位 | `app/api/http_server.py:144` 的 `finally` 段 |
+| JSON 请求体 | 默认上限 `MAX_JSON_BODY = 1024 * 1024`（1 MiB），超限抛 `payload_too_large`；**保存在线编辑（`PUT …/text`）按 `security.max_edit_bytes` 放宽**（`text_body_limit()`，v0.1.2 阶段一修 D1），其余接口仍按 1 MiB；空体视为 `{}`；非 UTF-8 或非法 JSON 抛 `invalid_request`（消息里带行号列号）；顶层不是对象也抛 `invalid_request` | `app/api/request.py:24`、`:34`、`:92`、`:136` |
+| 请求体读取纪律 | 请求体没读完的请求会在响应后强制断开连接，防止 keep-alive 连接上的字节错位；**回错误响应前会先按上限排空请求体**（读完就不再断连接，排空超时 5 秒），避免浏览器上传途中被掐断而只看到网络错误 | `app/api/http_server.py:144` 的 `finally` 段、`:217` `_discard_request_body`、`:68` `DRAIN_TIMEOUT_SECONDS` |
 | 方法 | `HEAD` 映射到 `GET` 路由；路径存在但方法不符时返回 `invalid_request`（400），`detail` 里列出允许的方法；路径完全不存在返回 `path_not_found`，消息「接口不存在。」 | `app/api/router.py:49`、`app/api/http_server.py:179` |
 | 预检 | `OPTIONS` 一律返回 403，且**不返回任何 `Access-Control-Allow-*` 头** | `app/api/http_server.py:132` `do_OPTIONS` |
 
@@ -1027,7 +1027,7 @@ Content-Type: application/json
 | `search_busy` | 409 | 同一条连接上已有正在进行的检索（`app/services/search.py` 的 `SearchRegistry.start`） | `errors.py:195` |
 | `edit_conflict` | 409 | 保存时远端文件已被改动（`extra.reason` 为 `content`/`size`/`mtime`），拒绝覆盖他人修改 | `errors.py:210` |
 | `discovery_busy` | 409 | 已有一个正在进行的扫描（`app/services/discovery.py` 的 `DiscoveryRegistry.start`） | `errors.py:225` |
-| `payload_too_large` | 413 | 请求体超过 1 MiB，或文件超过 `max_upload_bytes` / `max_download_bytes` / `security.max_edit_bytes` | `errors.py:88` |
+| `payload_too_large` | 413 | 请求体超过 1 MiB（保存在线编辑时按 `security.max_edit_bytes` 放宽），或文件超过 `max_upload_bytes` / `max_download_bytes` / `security.max_edit_bytes` | `errors.py:88` |
 | `internal_error` | 500 | 未预期的内部异常；端口被占用、绑定地址不可用 | `errors.py:241` |
 | `config_error` | 500 | 配置文件损坏/不可读/写失败；找不到 `ssh` 客户端 | `errors.py:95` |
 | `remote_error` | 502 | 远端返回其它错误（SFTP `STATUS` 4 或未映射码）；保存时改名/替换失败 | `errors.py:181` |
