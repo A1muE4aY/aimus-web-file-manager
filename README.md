@@ -8,10 +8,10 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 
 | | |
 |---|---|
-| 当前版本 | `v0.1.1`（在 v0.1.0 基础上完成缺陷修复、侧边栏优化、远端文件检索、在线编辑与文件操作、在线虚拟机自动发现） |
+| 当前版本 | `v0.1.2`（在 v0.1.1 基础上完成七阶段维护：遗留缺陷复核与修复、文件列表布局固定化与自绘右键菜单、统一启动入口 `run.bat` / `run.sh`、SSH 配置教程、回归与安全检查、真实桌面 CU 验收） |
 | 运行时依赖 | **0 个第三方 Python 包**（系统 OpenSSH 客户端视为环境前提） |
-| 测试状态 | 单元 505 / 集成 108 / 安全 82 / 端到端 22，合计 **717 项全部通过**（见 [docs/TEST_REPORT.md](docs/TEST_REPORT.md)） |
-| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.1-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
+| 测试状态 | 单元 588 / 集成 125 / 安全 82 / 端到端 32，合计 **827 项全部通过**（0 失败 / 0 错误 / 1 跳过；见 [docs/reports/PHASE-06-CU-ACCEPTANCE-v012.md](docs/reports/PHASE-06-CU-ACCEPTANCE-v012.md) §5.1） |
+| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.2-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
 
 ---
 
@@ -81,15 +81,15 @@ python app\main.py --init-config
 | [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | 目录用途、命名规范、文件归属 |
 | [docs/API.md](docs/API.md) | HTTP API 定义、参数、响应、错误码（32 个端点） |
 | [docs/SECURITY.md](docs/SECURITY.md) | 威胁模型、认证、密钥保护、路径校验、残余风险 |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | 技术选型、替代方案、决策理由（D-001 ~ D-018） |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | 技术选型、替代方案、决策理由（D-001 ~ D-021） |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发环境、调试方法、代码规范 |
 | [docs/TEST_PLAN.md](docs/TEST_PLAN.md) | 测试范围、分层、环境、用例设计原则、验收门槛 |
 | [docs/TEST_REPORT.md](docs/TEST_REPORT.md) | **实际**测试执行记录、验收项结论与证据 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 版本变更记录 |
 | [docs/RELEASE.md](docs/RELEASE.md) | 发行说明、构建步骤、发行包内容、校验和 |
-| [docs/reports/](docs/reports/) | 阶段报告（01~06）与最终开发报告 |
+| [docs/reports/](docs/reports/) | 阶段报告（v0.1.2 为 01~07）与最终开发报告 |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | 面向使用者的操作说明 |
-| [.md](.md) | 原始规划文档（用户提供，只读输入） |
+| [dev_guide/](dev_guide/) | 规划文档与接力任务书（用户提供，只读输入） |
 
 ## 开发与测试
 
@@ -143,8 +143,9 @@ aimus-web-file-manager/
 - HTTP 层开放的写操作有：**上传、在线编辑保存、重命名、压缩、解压、删除**；创建目录属 P2，已在连接层实现但未暴露。
 - **覆盖上传中断会在目标路径留下被截断的文件**（SFTP v3 的 `RENAME` 不能替换已存在目标），
   这是本版明确接受的取舍；新建上传走「临时名 + 改名」，不会留下半成品。
-- 未在**真实 CentOS 虚拟机**上验证（集成与端到端跑在 WSL 测试床上）；未做系统级断网验证。
-  这两条已在 [docs/TEST_REPORT.md](docs/TEST_REPORT.md) §8 如实登记，不得当作已通过。
+- **自动化**的集成与端到端测试跑在 WSL 测试床上；**真实 CentOS Stream 10** 由各阶段的人工 CU 验收覆盖
+  （v0.1.2 阶段一、二、三、六；见 [docs/reports/](docs/reports/) 的 v0.1.2 报告）。
+- 未做系统级断网验证（只有静态扫描、零依赖与「端到端对外请求为空」的间接证据）。
 
 ## 许可证
 
