@@ -132,7 +132,7 @@ class BrowserDiscoveryTests(unittest.TestCase):
     def open_panel(self, page):
         """像用户那样从首页点开侧栏的「扫描」。"""
         page.navigate(self.base_url + "/")
-        page.wait_for("!document.getElementById('app').hidden", message="页面外壳没有显示出来")
+        page.wait_for("!!document.getElementById('app') && !document.getElementById('app').hidden", message="页面外壳没有显示出来")
         page.install_helpers()
         page.evaluate("document.getElementById('btn-scan-vms').click()")
         page.wait_for("!!document.getElementById('discovery-status')", message="发现面板没有打开")

@@ -327,7 +327,7 @@ class BrowserLayoutTests(unittest.TestCase):
     def open_fixture_in_browser(self, page, *, connection_id: str = CONNECTION_ID):
         """从空白页开始：连上测试床，点进夹具目录 —— 走的是用户那条路。"""
         page.navigate(self.base_url + "/")
-        page.wait_for("!document.getElementById('app').hidden", message="页面外壳没有显示出来")
+        page.wait_for("!!document.getElementById('app') && !document.getElementById('app').hidden", message="页面外壳没有显示出来")
         page.install_helpers()
         page.wait_for(
             "document.querySelectorAll('#conn-list .conn-item').length === 2",

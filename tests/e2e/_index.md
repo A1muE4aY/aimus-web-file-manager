@@ -5,7 +5,7 @@
 
 | 文件 | 作用 | 需要 WSL 测试床 |
 | --- | --- | --- |
-| support.py | 标准库实现的 CDP over WebSocket 客户端与 Edge 启动器；页面辅助函数 | 否 |
+| support.py | 标准库实现的 CDP over WebSocket 客户端与 Edge 启动器；页面辅助函数（`wait_for` 的表达式紧跟 `navigate()` 时必须容忍 DOM 尚未解析，见 `docs/reports/PHASE-06-CU-ACCEPTANCE-v012.md` §4.6） | 否 |
 | test_browser_flow.py | 浏览器里的连接、目录浏览、主机密钥确认、密码提示与失败上报 | 前两个类需要 |
 | test_browser_regressions.py | 阶段一缺陷②③的浏览器回归：远端目录消失后的「已过期」列表与重试入口；已有活动连接时新建连接不得把文件区打回占位页 | 是 |
 | test_browser_sidebar.py | 阶段二侧边栏：窄/常规/宽三种宽度下的布局、长名称换行不重叠、四种连接状态一眼可分 | 是 |

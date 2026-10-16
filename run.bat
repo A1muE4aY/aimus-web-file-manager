@@ -1,9 +1,34 @@
 @echo off
+setlocal enableextensions
+rem NOTE: keep everything above the "AWFM_UTF8_READY" block below ASCII-only.
+rem cmd.exe reads a batch file line by line using the console code page. This file is
+rem UTF-8; when the console is still GBK(936), Chinese lines get split in the middle
+rem and the tail of a line is executed as a command, printing a run of
+rem "... is not recognized as an internal or external command" errors.
+rem The bootstrap below switches the console to UTF-8 and re-runs this very file once,
+rem so the second pass reads the whole file as UTF-8 and nothing is truncated.
+rem Do NOT wrap the bootstrap in an if (...) block: %ERRORLEVEL% inside a parenthesised
+rem block expands at PARSE time, which swallows the child's exit code (caught by the
+rem v0.1.2 stage-6 integration tests). goto keeps the lines executed one by one.
+if defined AWFM_UTF8_READY goto :awfm_utf8_ready
+chcp 65001 >nul 2>nul
+set "AWFM_UTF8_READY=1"
+"%COMSPEC%" /c ""%~f0" %*"
+exit /b %ERRORLEVEL%
+
+:awfm_utf8_ready
+
 rem AWFM 统一入口（Windows）—— 真正的逻辑都在 scripts\launcher.py
 rem 用法：run.bat [命令] [选项]；不带参数时显示交互菜单。
 rem 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 已经在跑或没在跑（未做改动）。
-setlocal enableextensions
-chcp 65001 >nul 2>nul
+rem
+rem 上面那段引导为什么存在：cmd.exe 按控制台代码页逐行读批处理；文件是 UTF-8
+rem 而控制台还在 GBK(936) 时，含中文的行会被从中间截断，后半截被当成命令执行，
+rem 报一串「不是内部或外部命令」。引导段先 chcp 65001，再用子进程重跑一次自己，
+rem 第二遍整份文件都在 UTF-8 下读取，就不会被截断（引导段本身必须保持纯 ASCII）。
+rem 引导段为什么不用 if (...) 括号块：括号块里的 %ERRORLEVEL% 在解析时就展开，会把
+rem 子进程的退出码吃成 0；换成 goto 之后每一行都是逐行执行的。
+
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 

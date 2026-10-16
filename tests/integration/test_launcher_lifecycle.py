@@ -49,6 +49,24 @@ def run_launcher(*args: str, timeout: float = 90.0, cwd: str | None = None):
     return completed.returncode, (completed.stdout or "") + (completed.stderr or "")
 
 
+def _console_code_page() -> int:
+    """当前控制台代码页；没有控制台时返回 0。"""
+    if os.name != "nt":
+        return 0
+    import ctypes
+
+    return int(ctypes.windll.kernel32.GetConsoleOutputCP())
+
+
+def _restore_console_code_page(code_page: int) -> None:
+    """chcp 改的是整个控制台（父子进程共享），跑完要还回去。"""
+    if os.name != "nt" or not code_page:
+        return
+    import ctypes
+
+    ctypes.windll.kernel32.SetConsoleOutputCP(code_page)
+
+
 class LauncherLifecycleTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory(prefix="awfm-launcher-it-")
@@ -406,6 +424,38 @@ class WrapperExitCodeTest(unittest.TestCase):
         self.assertEqual(code, 2, out)  # argparse 用法错误
         code, out = self._run_wrapper("logs", "-n", "-1", "--pid-file", "absent.pid")
         self.assertEqual(code, 2, out)
+
+
+    @unittest.skipUnless(os.name == "nt", "cmd.exe 只在 Windows 上存在")
+    def test_gbk_console_does_not_break_the_wrapper(self):
+        """任务书 §5.2「Windows 首次启动」：控制台代码页是 GBK(936) 时也不能出现假错误。
+
+        阶段六真实桌面验收发现：cmd.exe 按控制台代码页逐行读批处理文件，UTF-8 的 run.bat 在
+        936 下会被从中间截断，双击后先看到一串「不是内部或外部命令」。修复前这条命令的退出码
+        是 9009（最后那条半行命令找不到），修复后是 0。
+        """
+        environment = dict(os.environ)
+        environment["AWFM_NO_PAUSE"] = "1"
+        environment["PYTHONUTF8"] = "1"
+        environment["PYTHONIOENCODING"] = "utf-8"
+        original = _console_code_page()
+        try:
+            completed = subprocess.run(
+                "chcp 936 >nul & call run.bat help",
+                shell=True,
+                cwd=str(self.root),
+                capture_output=True,
+                timeout=60.0,
+                check=False,
+                env=environment,
+            )
+        finally:
+            _restore_console_code_page(original)
+        text = (completed.stdout or b"").decode("utf-8", "replace") + (completed.stderr or b"").decode("utf-8", "replace")
+        self.assertEqual(completed.returncode, 0, text)
+        self.assertIn("AWFM", text)
+        self.assertNotIn("not recognized", text)
+        self.assertNotIn("不是内部或外部命令", text)
 
 
 if __name__ == "__main__":

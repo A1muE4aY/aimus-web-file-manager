@@ -103,7 +103,7 @@ class BrowserJourneyTests(unittest.TestCase):
 
             # 令牌由后端注入 index.html；页面外壳必须显示出来（T-002）。
             page.wait_for(
-                "!document.getElementById('app').hidden", message="页面外壳没有显示出来"
+                "!!document.getElementById('app') && !document.getElementById('app').hidden", message="页面外壳没有显示出来"
             )
             page.install_helpers()
             token = page.evaluate("document.querySelector('meta[name=\"awfm-token\"]').content")
@@ -184,7 +184,7 @@ class BrowserJourneyTests(unittest.TestCase):
         self.config.known_hosts_path.unlink()
         with browser_session() as page:
             page.navigate(self.base_url + "/")
-            page.wait_for("!document.getElementById('app').hidden", message="页面外壳没有显示出来")
+            page.wait_for("!!document.getElementById('app') && !document.getElementById('app').hidden", message="页面外壳没有显示出来")
             page.install_helpers()
             self.assertTrue(page.evaluate(click_connect_button()), "没有找到连接按钮")
 
@@ -226,7 +226,7 @@ class BrowserPasswordPromptTests(unittest.TestCase):
         with local_server() as harness:
             with browser_session() as page:
                 page.navigate(harness.client.base + "/")
-                page.wait_for("!document.getElementById('app').hidden", message="页面外壳没有显示出来")
+                page.wait_for("!!document.getElementById('app') && !document.getElementById('app').hidden", message="页面外壳没有显示出来")
                 page.install_helpers()
                 page.wait_for(
                     "document.querySelectorAll('#conn-list .conn-item').length === 1",

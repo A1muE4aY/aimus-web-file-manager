@@ -166,7 +166,7 @@ class BrowserSidebarTests(unittest.TestCase):
 
     def _open_page(self, page):
         page.navigate(self.base_url + "/")
-        page.wait_for("!document.getElementById('app').hidden", message="页面外壳没有显示出来")
+        page.wait_for("!!document.getElementById('app') && !document.getElementById('app').hidden", message="页面外壳没有显示出来")
         page.install_helpers()
         page.wait_for(
             "document.querySelectorAll('#conn-list .conn-item').length === 3",
