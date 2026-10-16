@@ -5,7 +5,8 @@
 
 ## 1. 权威规格来源
 
-- 规划文档（用户提供，**只读输入，不得改写**）：`E:/Project/aimus-web-file-manager/.md`
+- 规划文档（用户提供，**只读输入，不得改写**）：`E:/Project/aimus-web-file-manager/dev_guide/`
+  ——当前接力的版本是 `dev_guide/0.1.2_.md`，历史版本 `0.1.0_.md` `0.1.0_opt1.md` `0.1.1_.md` 同目录留档。
 - 本项目的目录结构、功能分级、测试矩阵、文档体系全部以该文件 §3/§5/§7/§9 为准。
 - 与之冲突时：**用户当前对话的直接指示 > 本文件 > 规划文档 > 全局 AGENTS.md**。
 
@@ -25,7 +26,7 @@
 | `.temp/` | 草稿 | 会话中转；可随时整体清空 |
 | `.archive/` | 归档 | 本项目的 `duplicates/ deps/ junk/ misc/`；**只进不出** |
 | `README.md` `AGENTS.md` `.gitignore` `.gitattributes` | 根文件 | 允许（`.gitattributes` 钉仓库内行尾为 LF：`scripts/testbed_wsl.sh` 在 WSL 里执行，CRLF 会让 shebang 与续行报 `\r: command not found`） |
-| `.md` | 用户输入 | 规划文档原件，**保持原名原位置不动** |
+| `dev_guide/` | 用户输入 | 规划文档与接力任务书，**只读、保持原名原位置不动**（2026-10-17 由用户从根目录 `0.md` `1.md` `2.md` 迁入） |
 
 ## 3. 例外与纪律
 
