@@ -44,17 +44,23 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 ## 快速开始
 
 ```powershell
-# 1. 启动本地服务（默认只监听 127.0.0.1:8760，首次运行使用内置默认配置）
-python scripts\start.py
+# 1. 启动本地服务（默认只监听 127.0.0.1:32579，首次运行使用内置默认配置）
+run.bat                     # 不带参数 = 交互菜单：启动 / 状态 / 停止 / 日志 / 自检
+run.bat start               # 直接后台启动（Linux / macOS 用 ./run.sh start）
 
 # 2. 浏览器打开
-#    http://127.0.0.1:8760/
+#    http://127.0.0.1:32579/
 
-# 3.（可选）生成一份可手工编辑的配置文件 data/config.json
+# 3. 其它常用命令（实现都在 scripts/launcher.py，Windows 与 Linux 行为一致）
+run.bat status              # 运行状态、地址与进程号
+run.bat stop                # 停止（只停 AWFM 自己的进程，未确认不强制终止）
+run.bat logs                # 看服务日志
+
+# 4.（可选）生成一份可手工编辑的配置文件 data/config.json
 python app\main.py --init-config
 ```
 
-便携版：解压发行包后双击 `start.cmd` 即可启动，停止用 `stop.cmd`（见 [docs/RELEASE.md](docs/RELEASE.md)）。
+便携版：解压发行包后双击 `run.bat`（Linux / macOS 用 `./run.sh`）即可启动，停止用同一个入口（见 [docs/RELEASE.md](docs/RELEASE.md)）。
 
 > 服务**默认只绑定回环地址**。若要开放局域网访问，必须先理解风险并修改配置，
 > 详见 [docs/SECURITY.md](docs/SECURITY.md)。

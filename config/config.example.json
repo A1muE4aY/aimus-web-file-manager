@@ -2,7 +2,7 @@
   "config_version": 1,
   "server": {
     "host": "127.0.0.1",
-    "port": 8760,
+    "port": 32579,
     "open_browser": false,
     "request_timeout_seconds": 60
   },

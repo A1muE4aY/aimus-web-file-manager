@@ -9,6 +9,7 @@ python -m unittest discover -s tests/unit -t .
 | 文件 | 覆盖 |
 |---|---|
 | `test_config.py` | 配置解析与校验、原子保存、默认值（决策 D-006 / D-009）、发现段的取值范围与 `to_dict` 往返（阶段五顺手修掉的 `max_edit_bytes` 丢失也在这里钉住） |
+| `test_launcher.py` | 统一启动器 `scripts/launcher.py`（39 项，用 `importlib` 直接加载该脚本）：默认端口 32579 与解析器默认值、未知命令退出码 2、映像名判定 `looks_like_python`、PID 文件的读写与坏格式容错、`tail_text` 取尾、四态状态文案、配置加载与 `--port` 覆盖、`build_argv`（阶段三 D-A：配置不存在时不得传 `--config`）、以及 POSIX 的 SIGTERM 处理器（Windows 上跳过） |
 | `test_errors.py` | 错误模型：状态码来自类属性；构造函数拒绝 `http_status=` 关键字；静态扫描 app/ 防复发 |
 | `test_paths.py` | 远程路径与名称校验（验收项 T-008） |
 | `test_redact.py` | 日志脱敏（验收项 T-011） |

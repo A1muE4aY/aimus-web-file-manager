@@ -3,6 +3,10 @@
 #   "\r: command not found" 这类极难定位的错误。
 * text=auto eol=lf
 
+# 例外：Windows 批处理必须是 CRLF。cmd.exe 对 LF 结尾的 .bat 在部分环境
+# （尤其是带标签跳转与续行时）行为不稳，run.bat 是给用户双击的入口，不能赌。
+*.bat text eol=crlf
+
 # 二进制文件不做行尾转换
 *.png binary
 *.jpg binary

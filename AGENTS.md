@@ -26,6 +26,7 @@
 | `.temp/` | 草稿 | 会话中转；可随时整体清空 |
 | `.archive/` | 归档 | 本项目的 `duplicates/ deps/ junk/ misc/`；**只进不出** |
 | `README.md` `AGENTS.md` `.gitignore` `.gitattributes` | 根文件 | 允许（`.gitattributes` 钉仓库内行尾为 LF：`scripts/testbed_wsl.sh` 在 WSL 里执行，CRLF 会让 shebang 与续行报 `\r: command not found`） |
+| `run.bat` `run.sh` | 源码 | 统一启动入口（v0.1.2 阶段三）：Windows 双击 `run.bat`，Linux/macOS 用 `./run.sh`；两者都只做「找 Python → 转交 `scripts/launcher.py`」，实现只有一份 |
 | `dev_guide/` | 用户输入 | 规划文档与接力任务书，**只读、保持原名原位置不动**（2026-10-17 由用户从根目录 `0.md` `1.md` `2.md` 迁入） |
 
 ## 3. 例外与纪律

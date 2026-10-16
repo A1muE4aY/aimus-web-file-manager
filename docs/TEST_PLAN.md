@@ -49,7 +49,7 @@ PowerShell 下看输出：`unittest` 把进度点写到 stderr，Windows PowerSh
 
 | 组件 | 要求 | 本项目实测 |
 |---|---|---|
-| Python | >= 3.10（`scripts/start.py` 与 `scripts/build.py` 会拦） | 3.12.10（`E:\Software\Python 3.12\python.exe`，本机无 `python3`） |
+| Python | >= 3.10（`scripts/launcher.py`、`scripts/start.py` 与 `scripts/build.py` 都会拦） | 3.12.10（`E:\Software\Python 3.12\python.exe`，本机无 `python3`） |
 | 操作系统 | Windows 10/11 | Windows 11 家庭版 26300（非管理员会话） |
 | SSH 客户端 | 任意 OpenSSH（`ssh`/`ssh-keygen` 在 PATH 或配置里给全路径） | OpenSSH_for_Windows 9.5p2 |
 | 目标机测试床 | 任意 Linux + sshd（非 root 亦可） | WSL Ubuntu 24.04.2 的非 root sshd，`127.0.0.1:2222`，用户 `aimu`，家目录 `/home/aimu` |

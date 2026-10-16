@@ -30,7 +30,9 @@ LAYERS = ("unit", "integration", "security", "e2e")
 FAST_LAYERS = ("unit", "security")
 
 SUMMARY_RE = re.compile(r"^Ran (\d+) tests? in ([0-9.]+)s", re.M)
-STATUS_RE = re.compile(r"^(OK|FAILED[^\n]*)$", re.M)
+# unittest 在「全部通过但有跳过」时打印 `OK (skipped=N)` 而不是裸 OK，
+# 老式子 ^OK$ 匹配不到它，于是跳过数一直显示 0（与文件开头第 14-15 行的记录纪律矛盾）。
+STATUS_RE = re.compile(r"^(OK(?: \([^\n]*\))?|FAILED[^\n]*)$", re.M)
 COUNT_RE = re.compile(r"([a-z]+)=(\d+)")
 
 

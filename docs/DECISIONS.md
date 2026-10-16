@@ -204,11 +204,11 @@ drwx******    ? aimu     aimu         4096 Oct 15 00:06 sub
   `tests/unit/test_connection_model.py:88`、`tests/security/test_credentials.py`（哨兵密码不出现在落盘配置、
   响应、日志与 `argv` 中）。
 
-## D-015 便携版打包口径：不捆绑 Python，不含 tests/
+## D-015 便携版打包口径：不捆绑 Python，不含 tests/ —— **包内启动脚本清单已由 D-020 更新**
 
 - **决策**：`scripts/package.py` 产出的便携包 = 仓库的可运行子集
   （`app/`、`frontend/`、`docs/`、`scripts/start.py`、`README.md`、`LICENSE`、
-  `config/config.example.json`，加上自己生成的 `start.cmd`、`stop.cmd`、`VERSION`、`MANIFEST.json`）；
+  `config/config.example.json`、`scripts/launcher.py`、`run.bat`、`run.sh`，加上自己生成的 `VERSION`、`MANIFEST.json`；**v0.1.2 阶段三起不再生成 `start.cmd`/`stop.cmd`**，见 D-020）；
   **不捆绑 Python 运行时，也不把 `tests/` 打进去**。包内每个文件在 `MANIFEST.json` 里登记 SHA-256，
   压缩包整体哈希写进 `dist/SHA256SUMS.txt`。
 - **备选**：PyInstaller / Nuitka 打单文件 exe；把 Python 解释器嵌入包内；把 `tests/` 一并分发。
@@ -217,7 +217,7 @@ drwx******    ? aimu     aimu         4096 Oct 15 00:06 sub
   打包器会带来体积、杀软误报与构建复杂度，而它要解决的唯一问题（解释器）并不比「让用户装一次 Python」
   更省事，也不符合本项目「可复核」的取向——包里的东西应当一眼看得懂。`tests/` 属于开发版（即仓库本身），
   进包只会让发行包对最终用户更吵。
-- **代价**：用户须自备 Python 3.10+（`start.cmd` 找不到解释器时明确报错并指向 README 的「系统要求」）；
+- **代价**：用户须自备 Python 3.10+（`run.bat`/`run.sh` 找不到解释器时明确报错并指向 README 的「系统要求」）；
   包内不含测试，所以「用户手上这份包能不能跑通测试」不能自证，只能由发行时的
   `docs/TEST_REPORT.md` 与仓库里的四层测试承担。
 - **自引用问题**：`docs/` 随包分发，所以**不把压缩包自身的 SHA-256 写进包内文档**（写了就自相矛盾：
@@ -306,6 +306,36 @@ drwx******    ? aimu     aimu         4096 Oct 15 00:06 sub
   2. **这个上限不是协议的一部分，而是服务端实现的行为**：OpenSSH 的 `sftp-server` 用 `SFTP_MAX_MSG_LENGTH`（256 KiB）判**整包**长度，超限时打印 `bad message from ...` 并**结束连接**。客户端收不到任何 STATUS，只看到管道断开 —— 在本项目里表现为 `NotConnected`：「写入远端失败：连接已断开。」，极易被误判成网络问题。
   3. 实测边界（WSL 测试床 OpenSSH_9.6p1 Ubuntu-3ubuntu13.20）：一次 WRITE 携带 261120 字节成功，262144 字节即断连；`MAX_FRAME_BYTES`（4 MiB）管的是**入站**帧，管不到这个上限。
   4. 对应的真实缺陷（v0.1.2 阶段一 D1 第二层）：`app/services/editor.py:342` 用 `upload_stream(temp, [data])` 把在线编辑的整份文本当**一个**块写出去，于是 256 KiB 以上的文件「能打开、保存必失败」。回归测试：`tests/unit/test_sftp_client.py`（5 项，含实测失败尺寸 262144）与 `tests/integration/test_edit_api.py` 的 `test_file_between_the_transport_ceiling_and_the_edit_limit_saves`。
+
+
+## D-020 统一启动入口 = `run.bat` / `run.sh` + `scripts/launcher.py`（v0.1.2 阶段三）
+
+- **决策**：对外只留一个入口——Windows 双击 `run.bat`、Linux/macOS 执行 `./run.sh`；两个外壳只做三件事
+  （切到脚本所在目录、找 Python 解释器、把参数原样转交给 `scripts/launcher.py`），**逻辑只有一份 Python 实现**
+  （`scripts/launcher.py`，命令 `menu`/`start`/`status`/`stop`/`restart`/`logs`/`check`/`help`，不带命令时进入交互菜单）。
+  默认端口从 8760 改为 **32579**。
+- **备选**：
+  - A. 把 `start.cmd` 直接改名成 `run.bat`、`stop.cmd` 改名成 `run.sh` —— 正是任务书 §3.3 明确禁止的做法：两个平台各写一套外壳，逻辑立刻分叉。
+  - B. 只提供 `python scripts/launcher.py`，不做外壳 —— 用户得先会开命令行、还得知道 Python 装在哪；「双击就能用」是这次改造的起点。
+  - C. 在外壳里写 PowerShell / bash 的启动逻辑 —— 进程存活判断、PID 文件、健康检查在两个平台上无法共用，测试也要写两遍。
+- **理由**：
+  1. 一个入口少一类支持问题：用户不用先判断「我该运行哪一个」。
+  2. 逻辑集中在可单元测试的 Python 里：`tests/unit/test_launcher.py`（39 项）直接调用 `launcher.py` 的函数，外壳只剩转发；
+     `tests/integration/test_launcher_lifecycle.py`（7 项：生命周期 4 + 外壳退出码 3）用子进程跑真实生命周期（启动 → 重复启动 → 状态 → 日志 → 停止 → 再启动），
+     `WrapperExitCodeTest` 再验一遍外壳的退出码传递（Windows 走 `cmd /c run.bat`，POSIX 走 `/bin/sh run.sh`）。
+  3. 退出码就是「状态与请求是否一致」：`start` 发现已经在运行返回 3 且不改动任何东西；`stop` 发现没在运行也返回 3；
+     `check`/`start` 失败返回 1；用法错误返回 2。脚本与人都能据此判断，不需要解析输出文本。
+- **停止纪律（验收条款 4）**：`stop` 只认 `data/awfm.pid` 里记的 PID，并要求该 PID 的映像名含 `python`
+  （否则打印「拒绝停止：PID N 的映像名是 X，不是 python 进程。」）；**没有 PID 文件时绝不去动占用端口的程序**，
+  只报告「AWFM 没有在运行（没有 PID 文件），但 127.0.0.1:32579 上有别的程序在监听。停止只作用于 AWFM 自己记录的进程，这里不会去动它。」。
+  Windows 上后台进程收不到温和信号，先温和 `taskkill /PID N /T`，没退再**征求确认**才 `taskkill /F /T`；
+  非交互终端一律当作拒绝并返回 1（自动化用 `stop --force --yes`）。
+- **代价**：
+  1. 链路多了一层（`run.bat` → `launcher.py` → `app/main.py`），排查时要知道是哪一层报的错；因此每层错误都带 `[失败]` 前缀、具体原因与建议命令。
+  2. `run.bat` 不转发 app 自身的选项（`--log-level`、`--init-config`、`--check` 等），那些仍走 `python app\main.py`；帮助文本与用户指南都写明了这一点。
+  3. 真实缺陷（本阶段 Windows 验收发现，已修并补回归）：`scripts/launcher.py:358` 曾把「默认配置路径不存在」当成显式 `--config` 传下去，
+     在全新目录里启动必失败（`app/main.py` 对显式 `--config` 缺失报错 exit 2）；`run.bat` 的 `endlocal ^& exit /b 3` 在括号块里把 `&` 变成字面参数，
+     退出码 3 被吞成 0。两条分别由 `BuildArgvTest`（4 项）与 `WrapperExitCodeTest` 守住。
 
 ---
 

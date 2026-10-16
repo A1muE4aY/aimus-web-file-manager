@@ -22,6 +22,7 @@ import argparse
 import logging
 import os
 import shutil
+import signal
 import sys
 import threading
 import webbrowser
@@ -239,10 +240,34 @@ def _run_checks(config: AppConfig, config_path: Path) -> int:
 # --------------------------------------------------------------------- 启动
 
 
+def _install_signal_handlers() -> None:
+    """把 SIGTERM 接成与 Ctrl+C 相同的退出路径（run.sh stop / systemd 都走它）。
+
+    POSIX 下 SIGTERM 默认直接终止进程，那样 finally 里的清理（搜索线程、discovery、
+    manager.disconnect_all()）不会执行，会留下孤儿 ssh 进程 —— 违反验收项 T-013。
+    让处理器抛 KeyboardInterrupt，就复用了 _serve 里已有的清理分支。
+
+    Windows 不装：那里没有可用的 SIGTERM 语义（os.kill 会变成 TerminateProcess），
+    停止由 run.bat 的 taskkill 负责。非主线程（集成测试在线程里跑服务）装不上，
+    捕获 ValueError 后静默跳过。
+    """
+    if os.name == "nt":
+        return
+
+    def _on_terminate(signum: int, frame: object) -> None:  # pragma: no cover - 信号路径
+        raise KeyboardInterrupt
+
+    try:
+        signal.signal(signal.SIGTERM, _on_terminate)
+    except (ValueError, OSError, AttributeError):  # pragma: no cover - 非主线程/平台限制
+        logger.debug("SIGTERM 处理器没能装上（多半不在主线程），忽略。")
+
+
 def _serve(config: AppConfig) -> int:
     # 运行期依赖的目录在这里一次性建好（AGENTS.md §3.5：不在仓库里预建空目录）。
     config.logs_dir.mkdir(parents=True, exist_ok=True)
     config.data_dir.mkdir(parents=True, exist_ok=True)
+    _install_signal_handlers()
 
     manager = ConnectionManager(config)
     try:

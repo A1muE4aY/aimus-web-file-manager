@@ -9,10 +9,11 @@
 
     dist/AWFM-0.1.0-windows-x64/          暂存目录树（就是解压后看到的样子）
       ├─ app/ frontend/ docs/             源码、静态资源、完整文档
-      ├─ scripts/start.py                 启动入口（与开发版同一个文件）
+      ├─ scripts/launcher.py              统一启动器：启动/状态/停止/日志/自检
+      ├─ scripts/start.py                 前台启动的兼容入口（等价 run.bat start --foreground）
+      ├─ run.bat  run.sh                  Windows / Linux 统一入口（双击 run.bat 出菜单）
       ├─ config/config.example.json       配置模板（真实配置仍写到 data/）
       ├─ README.md  LICENSE
-      ├─ start.cmd  stop.cmd              Windows 启动 / 停止脚本（便携版要求提供停止脚本）
       ├─ VERSION                          版本与构建记录
       └─ MANIFEST.json                    文件清单（逐个文件的 SHA-256）
     dist/AWFM-0.1.0-windows-x64.zip       便携包
@@ -46,66 +47,14 @@ import build as build_checks  # noqa: E402  （同目录的静态校验，打包
 
 #: 进包的项目目录与文件（tests/、data/、logs/、.temp/、.archive/ 一律不进）
 STAGE_DIRS = ("app", "frontend", "docs")
-STAGE_SCRIPTS = ("start.py",)
-STAGE_FILES = ("README.md", "LICENSE", "config/config.example.json", "VERSION")
+STAGE_SCRIPTS = ("start.py", "launcher.py")
+STAGE_FILES = ("README.md", "LICENSE", "config/config.example.json", "VERSION", "run.bat", "run.sh")
 
 EXCLUDE_DIR_NAMES = {"__pycache__", ".pytest_cache", ".mypy_cache", ".idea", ".vscode"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".log", ".zip", ".tmp"}
 
 #: zip 内的固定时间戳 —— 让「同一份源码 + 同一次生成时间」的包可复现
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
-
-START_CMD = """@echo off
-rem AWFM portable launcher (Windows). Equivalent to: python scripts\\start.py %*
-setlocal
-cd /d "%~dp0"
-set "PYTHONUTF8=1"
-set "PYTHONIOENCODING=utf-8"
-set "AWFM_PYTHON="
-where py >nul 2>nul
-if not errorlevel 1 set "AWFM_PYTHON=py -3"
-if not defined AWFM_PYTHON (
-  where python >nul 2>nul
-  if not errorlevel 1 set "AWFM_PYTHON=python"
-)
-if not defined AWFM_PYTHON (
-  echo [FAILED] Python 3.10+ not found in PATH ^(tried: py -3, python^).
-  echo          See README.md - System requirements.
-  exit /b 2
-)
-%AWFM_PYTHON% "%~dp0scripts\\start.py" %*
-exit /b %ERRORLEVEL%
-"""
-
-STOP_CMD = """@echo off
-rem AWFM portable stop script (Windows).
-rem Usage: stop.cmd [port]      default port: 8760 (see config\\config.example.json)
-rem It only kills a python process that is LISTENING on 127.0.0.1:<port>, so a
-rem typo in the port number cannot take down an unrelated program.
-setlocal
-set "AWFM_PORT=%~1"
-if "%AWFM_PORT%"=="" set "AWFM_PORT=8760"
-set "AWFM_PID="
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr /c:"127.0.0.1:%AWFM_PORT% " ^| findstr /c:"LISTENING"') do set "AWFM_PID=%%p"
-if not defined AWFM_PID (
-  echo [INFO] Nothing is listening on 127.0.0.1:%AWFM_PORT% - AWFM is not running.
-  exit /b 0
-)
-tasklist /FI "PID eq %AWFM_PID%" | findstr /i "python" >nul
-if errorlevel 1 (
-  echo [WARN] PID %AWFM_PID% listens on 127.0.0.1:%AWFM_PORT% but is not a python process.
-  echo        Refusing to kill it. Inspect it with: tasklist /FI "PID eq %AWFM_PID%"
-  exit /b 1
-)
-echo [INFO] Stopping AWFM (PID %AWFM_PID%, port %AWFM_PORT%) ...
-taskkill /PID %AWFM_PID% /T /F >nul
-if errorlevel 1 (
-  echo [FAILED] taskkill returned an error.
-  exit /b 1
-)
-echo [ OK ] AWFM stopped.
-exit /b 0
-"""
 
 VERSION_TEMPLATE = """AWFM {version}
 构建时间：{built_at}
@@ -115,7 +64,8 @@ VERSION_TEMPLATE = """AWFM {version}
 
 便携版说明：
 * 运行只需要 Python 3.10 或更高版本，包内不含任何第三方依赖。
-* 双击 start.cmd（或运行 python scripts/start.py）启动，stop.cmd 停止。
+* 双击 run.bat（Linux/macOS 用 ./run.sh）启动，菜单里可以查看状态、停止服务、看日志。
+* 命令行等价写法：run.bat start / run.bat status / run.bat stop / run.bat logs。
 * 真实配置写在 data/config.json（首次启动自动生成），日志写在 logs/。
 * 校验和见同目录的 SHA256SUMS.txt。
 """
@@ -186,8 +136,6 @@ def build_stage(stage: Path, version: str, target_platform: str, built_at: datet
         copy_file(source, stage / relative)
         count += 1
 
-    write_text(stage / "start.cmd", START_CMD, newline="\r\n")
-    write_text(stage / "stop.cmd", STOP_CMD, newline="\r\n")
     write_text(
         stage / "VERSION",
         VERSION_TEMPLATE.format(
@@ -199,7 +147,7 @@ def build_stage(stage: Path, version: str, target_platform: str, built_at: datet
         ),
         newline="\n",
     )
-    return count + 3
+    return count + 1
 
 
 def write_manifest(stage: Path, version: str, target_platform: str, built_at: datetime.datetime) -> list:
@@ -273,12 +221,13 @@ def check_required(stage: Path) -> list:
         "frontend/index.html",
         "config/config.example.json",
         "scripts/start.py",
+        "scripts/launcher.py",
         "README.md",
         "LICENSE",
         "VERSION",
         "MANIFEST.json",
-        "start.cmd",
-        "stop.cmd",
+        "run.bat",
+        "run.sh",
     )
     return [name for name in required if not (stage / name).is_file()]
 
@@ -350,7 +299,7 @@ def main(argv: list) -> int:
     print("第 2 步：暂存目录树 -> " + stage.name)
     copied = build_stage(stage, version, target_platform, built_at)
     entries = write_manifest(stage, version, target_platform, built_at)
-    print("  复制 " + str(copied) + " 个文件（含 start.cmd / stop.cmd / VERSION），清单 " + str(len(entries)) + " 项。")
+    print("  复制 " + str(copied) + " 个文件（含 run.bat / run.sh / VERSION），清单 " + str(len(entries)) + " 项。")
 
     missing = check_required(stage)
     if missing:

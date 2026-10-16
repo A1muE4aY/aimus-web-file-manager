@@ -12,7 +12,7 @@
 
 | 项 | 值 | 依据 |
 |---|---|---|
-| 基地址 | `http://127.0.0.1:8760`（`server.host`/`server.port` 可改） | `app/core/config.py` 的 `DEFAULTS` |
+| 基地址 | `http://127.0.0.1:32579`（`server.host`/`server.port` 可改） | `app/core/config.py` 的 `DEFAULTS` |
 | 接口前缀 | `/api/` | `app/api/http_server.py:144` `_dispatch` |
 | 默认绑定 | 回环地址；非回环绑定必须显式设置 `security.allow_lan = true`（决策 D-009） | `app/core/config.py:178` `validate_binding` |
 | 传输编码 | UTF-8；JSON 响应 `application/json; charset=utf-8` | `app/api/responses.py:71` |

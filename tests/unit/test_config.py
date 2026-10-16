@@ -36,7 +36,7 @@ class DefaultsTests(unittest.TestCase):
     def test_defaults_bind_loopback(self):
         config = cfg.parse_config(base_data())
         self.assertEqual(config.server.host, "127.0.0.1")
-        self.assertEqual(config.server.port, 8760)
+        self.assertEqual(config.server.port, 32579)
         self.assertFalse(config.security.allow_lan)
         self.assertEqual(config.security.host_key_policy, "strict")
 
@@ -234,7 +234,9 @@ class LoadTests(unittest.TestCase):
         cfg.save_config(config)
         loaded = cfg.load_config(path)
         self.assertEqual(loaded.connections[0].id, "vm1")
-        self.assertEqual(loaded.server.port, 8760)
+        # 与默认值比对，而不是写死端口号：往返测试要证明的是「没丢字段」，
+        # 不是「默认端口永远是某个数字」（默认端口另有 test_launcher.py 钉住）。
+        self.assertEqual(loaded.server.port, cfg.DEFAULTS["server"]["port"])
 
     def test_saved_file_is_unicode_readable(self):
         path = self.dir / "config.json"
@@ -255,7 +257,8 @@ class LoadTests(unittest.TestCase):
         cfg.save_config(cfg.parse_config({**base_data(), "server": {**base_data()["server"], "port": 9000}}, path=str(path)))
         path.write_text("{ broken", encoding="utf-8")
         cfg.init_config(str(path), overwrite=True)
-        self.assertEqual(cfg.load_config(path).server.port, 8760)
+        # 覆盖重建后应回到默认端口（同上：比默认值，不写死数字）。
+        self.assertEqual(cfg.load_config(path).server.port, cfg.DEFAULTS["server"]["port"])
 
     def test_init_config_result_is_loadable(self):
         path = self.dir / "config.json"

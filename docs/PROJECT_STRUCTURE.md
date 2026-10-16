@@ -32,7 +32,8 @@ aimus-web-file-manager/
 │   ├── security/        路径穿越、未授权调用、凭据泄漏、主机密钥
 │   └── fixtures/        测试夹具（合成数据，**不含真实凭据**）
 ├── scripts/             开发、测试、启动与打包脚本（动词开头）
-│   ├── start.py         启动本地服务（薄包装，转发参数给 app/main.py）
+│   ├── launcher.py      统一启动器：启动/状态/停止/重启/日志/自检（run.bat 与 run.sh 的实现）
+│   ├── start.py         前台启动的兼容入口（等价 run.bat start --foreground）
 │   ├── test.py          四层测试批量运行器（unit/integration/security/e2e + 语法校验）
 │   ├── build.py         构建前静态校验（8 项，发行门禁）
 │   ├── package.py       便携版打包、清单校验与自检
@@ -42,6 +43,8 @@ aimus-web-file-manager/
 ├── data/                运行时配置与数据（.gitignore）
 ├── logs/                运行日志（.gitignore）
 ├── dist/                发行包产物（.gitignore）
+├── run.bat              Windows 统一入口（双击进交互菜单，参数原样转给 scripts/launcher.py）
+├── run.sh               Linux/macOS 统一入口（exec 转发，退出码与信号原样传递）
 ├── LICENSE              MIT 许可证
 ├── README.md            项目入口说明
 ├── AGENTS.md            本工作区白名单与纪律（唯一权威的顶层条目表）

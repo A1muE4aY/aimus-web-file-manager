@@ -48,7 +48,7 @@ DEFAULTS: dict[str, Any] = {
     "config_version": CONFIG_VERSION,
     "server": {
         "host": "127.0.0.1",
-        "port": 8760,
+        "port": 32579,
         "open_browser": False,
         "request_timeout_seconds": 60,
     },
@@ -128,7 +128,7 @@ def _require_str(value: Any, name: str) -> str:
 @dataclass
 class ServerConfig:
     host: str = "127.0.0.1"
-    port: int = 8760
+    port: int = 32579
     open_browser: bool = False
     request_timeout_seconds: int = 60
 
@@ -366,7 +366,7 @@ def parse_config(data: Any, *, path: str = "") -> AppConfig:
     _reject_unknown(server_raw, _SERVER_KEYS, "server")
     server = ServerConfig(
         host=_require_str(server_raw.get("host", "127.0.0.1"), "server.host"),
-        port=_require_int(server_raw.get("port", 8760), "server.port", minimum=1, maximum=65535),
+        port=_require_int(server_raw.get("port", 32579), "server.port", minimum=1, maximum=65535),
         open_browser=_require_bool(server_raw.get("open_browser", False), "server.open_browser"),
         request_timeout_seconds=_require_int(
             server_raw.get("request_timeout_seconds", 60),

@@ -20,23 +20,24 @@
 解压后的目录结构：
 
 ```
-AWFM-0.1.1-windows-x64/
-├── start.cmd            启动（自动找 py -3 / python，设置 UTF-8，再调 scripts/start.py）
-├── stop.cmd             停止（参数为端口，默认 8760；先确认 PID 是 python 进程再终止）
+AWFM-<版本>-windows-x64/
+├── run.bat              统一入口（双击进交互菜单；自动找 py -3 / python，设置 UTF-8，再调 scripts/launcher.py）
+├── run.sh               Linux / macOS 的统一入口（同一个启动器，只是外壳不同）
 ├── VERSION              版本、构建时间、平台、构建主机 Python 版本、源仓库说明
 ├── MANIFEST.json        包内**每个文件**的 SHA-256、大小与文件总数
 ├── README.md            项目说明
 ├── LICENSE              MIT 许可证
 ├── app/                 后端（Python 标准库）
 ├── frontend/            前端静态资源（离线可用，无构建步骤）
-├── scripts/start.py     启动入口（薄包装）
+├── scripts/launcher.py  统一启动器：启动 / 状态 / 停止 / 日志 / 自检（v0.1.2 阶段三新增）
+├── scripts/start.py     前台启动的兼容入口（等价 run.bat start --foreground）
 ├── config/config.example.json  配置模板
 └── docs/                全部交付文档（含本文件）
 ```
 
 必需文件由打包脚本逐个校验（缺任何一个就判定打包失败）：
 `app/main.py`、`app/__init__.py`、`frontend/index.html`、`config/config.example.json`、
-`scripts/start.py`、`README.md`、`LICENSE`、`VERSION`、`MANIFEST.json`、`start.cmd`、`stop.cmd`。
+`scripts/launcher.py`、`scripts/start.py`、`run.bat`、`run.sh`、`README.md`、`LICENSE`、`VERSION`、`MANIFEST.json`。
 
 **包内不含**：`tests/`（属开发版）、`data/`、`logs/`（运行时生成）、`dist/`（包自身），
 以及 `__pycache__`、`.pyc`、`.log` 等中间产物。
@@ -52,9 +53,12 @@ python scripts\package.py
 # 可选：--out <目录>  --platform <平台标签>  --skip-checks
 ```
 
-打包脚本自己会做这些事：复制白名单文件 → 生成 `VERSION` 与 `MANIFEST.json` → 写 `start.cmd`/`stop.cmd`（CRLF）
+打包脚本自己会做这些事：复制白名单文件（含 `run.bat`、`run.sh`、`scripts/launcher.py`；v0.1.2 阶段三起**不再生成** `start.cmd`/`stop.cmd`）→ 生成 `VERSION` 与 `MANIFEST.json`
 → 以**固定时间戳**（1980-01-01）压缩成 zip（所以同样的输入能产出同样的字节）→ 用 `testzip()` 校验 CRC
 → 逐个文件比对其 SHA-256 与清单一致 → 检查有无清单外的成员。
+
+> **数字口径**：本节与下一节的 95 个文件、`AWFM-0.1.1-windows-x64` 等具体值来自 **v0.1.1 的构建记录**；
+v0.1.2 的包在阶段七（版本与交付）重新生成后同步更新。脚本引用（`run.bat` / `run.sh` / `scripts/launcher.py`）已是当前仓库的真实结构。
 
 压缩包内共 **95 个文件**：清单 `MANIFEST.json` 的 `file_count` 是 **94**（清单不登记自身），加上 `MANIFEST.json` 自身正好 95；zip 成员数同为 95。
 所有成员名统一带一层 `AWFM-0.1.1-windows-x64/` 前缀——解压时不会把 `app/`、`frontend/`、`docs/` 散落到当前目录，目录结构与本文第 2 节的树完全一致。
@@ -82,15 +86,17 @@ certutil -hashfile dist\AWFM-0.1.1-windows-x64.zip SHA256
 
 **便携版**（目标机无需 Python 之外的任何安装）：
 
-1. 解压 zip 到任意可写目录（建议路径不含中文与空格，避免个别工具的编码问题）；
-2. 双击 `start.cmd`，或命令行 `start.cmd --port 8760 --no-browser`；
-3. 浏览器访问 `http://127.0.0.1:8760/`（默认只监听回环地址）；
-4. 停止：`stop.cmd`（默认端口 8760；`stop.cmd 8899` 可指定端口）。
+1. 解压 zip 到任意可写目录（路径**可以含空格**：v0.1.2 阶段三按含空格目录做过真实验收；仍建议避开中文路径）；
+2. 双击 `run.bat` 进交互菜单（启动 / 状态 / 停止 / 日志 / 自检），或直接命令行 `run.bat start`；
+   Linux / macOS 把 `run.bat` 换成 `./run.sh`；
+3. 浏览器访问 `http://127.0.0.1:32579/`（v0.1.2 起的默认端口；默认只监听回环地址）；
+4. 停止：**同一个入口** `run.bat stop`（Linux / macOS：`./run.sh stop`）——只停 AWFM 自己的进程，未经确认不做强制终止。
 
 **开发版**（本仓库）：
 
 ```powershell
-python scripts\start.py            # 启动
+run.bat                            # 统一入口（交互菜单）
+run.bat start                      # 后台启动；前台运行用 run.bat start --foreground
 python app\main.py --init-config    # 生成可编辑的 data/config.json
 python scripts\test.py              # 四层测试
 ```
@@ -122,7 +128,7 @@ python scripts\test.py              # 四层测试
 
 | # | 验收项 | 结论 | 证据 |
 |---|---|---|---|
-| 1 | 干净环境成功启动 | 通过 | 解压到临时目录后 `start.cmd --port 8899` → `/api/health` 200；`docs/TEST_REPORT.md` §3.3 |
+| 1 | 干净环境成功启动 | 通过 | v0.1.0/v0.1.1 的发行包在临时目录里跑 `start.cmd --port 8899` → `/api/health` 200（`docs/TEST_REPORT.md` §3.3；该脚本已在 v0.1.2 阶段三从发行包移除）；v0.1.2 阶段三改在**含空格目录**里真实运行 `run.bat start` → 首页与 `/api/health` 均 200（`docs/reports/PHASE-03-LAUNCHER-v012.md` §5） |
 | 2 | 界面不依赖外部 CDN 或在线字体 | 通过 | `scripts/build.py` 第 4 项 + `tests/security` 的 `OfflineFrontendTests`；端到端断言对外请求为空 |
 | 3 | 正确连接指定虚拟机并浏览文件 | 通过 | v0.1.1 阶段六真实桌面 CU 用**真机 CentOS Stream 10**（`192.168.170.128`）验证连接、指纹确认、浏览、检索、编辑与哈希核对（`docs/reports/PHASE-06-CU-ACCEPTANCE.md`）；v0.1.0 时此项在 WSL 测试床上验证 |
 | 4 | 主机密钥异常与认证失败处理正确 | 通过 | `tests/security/test_host_key.py`（未知/伪造/变化三种）；端到端第 2、3 条 |

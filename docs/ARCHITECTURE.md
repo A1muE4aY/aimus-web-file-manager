@@ -142,6 +142,8 @@ AWFM 解决的问题是：**在一台 Windows 宿主机上，用浏览器管理�
 | D-019 | 单次 SFTP WRITE 最多 64 KiB，超出由 `SftpClient.write_chunk` 拆帧 | OpenSSH 的 `sftp-server` 拒收整包超过 256 KiB 的消息并**直接结束连接**，客户端只会看到「写入远端失败：连接已断开」，会把「大文件保存不了」误判成网络问题 | `MAX_WRITE_CHUNK` / `OPENSSH_MAX_PACKET_BYTES` 在 `app/ssh/sftp_protocol.py`；拆分在 `app/ssh/sftp_client.py` `write_chunk`（上传、覆盖写、在线编辑保存、压缩打包共用这一条路）；实测 261120 字节可、262144 字节断；回归 `tests/unit/test_sftp_client.py` |
 | D-014 | 密码从不持久化 | 把密码写进本地 JSON，其安全性完全依赖该文件的 ACL，而本项目默认以非管理员账户运行、无法保证 ACL 正确；与其提供一个「看起来安全」的选项，不如不提供 | 配置文件里**没有**密码字段（`app/models/connection.py` 模块 docstring）；密码只在 `POST …/connect` 请求体里传入、只存在于内存会话；代价是每次重连都要重新输入 |
 
+| D-020 | 统一启动入口 = `run.bat` / `run.sh`（只做「切到脚本目录 + 找 Python + 原样转发」）+ `scripts/launcher.py`（唯一实现）；默认端口 8760 → 32579；停止只在「PID 文件里的 PID」且「映像名含 python」两个条件同时成立时动作，未经确认绝不强制终止 | v0.1.1 的 `start.cmd` / `stop.cmd` 是两份互不相干的批处理：重复启动、端口冲突、停止失败都只能靠用户自己看窗口，且无法被测试覆盖。逻辑放进 Python 后，单测 39 项 + 集成 4 项 + 外壳退出码测试都可自动化；外壳只剩转发，行为由退出码 0/1/2/3 表达 | `run.bat`、`run.sh`、`scripts/launcher.py`（八命令 menu/start/status/stop/restart/logs/check/help）；发行白名单 `scripts/package.py:50-51`（不再生成 `start.cmd`/`stop.cmd`）；`app/main.py:243` 的 SIGTERM 处理器让 POSIX `stop` 走优雅退出；决策全文、备选与代价见 `docs/DECISIONS.md` D-020 |
+
 **仍未决的相关项**：P-002（`SSH_ASKPASS` 能否携带参数，阶段 03 实测）；P-005（取主机指纹的方案已改为「临时 `UserKnownHostsFile` + `StrictHostKeyChecking=no` 连一次读回 host key」，因为 `ssh-keyscan` 在 Windows OpenSSH 9.5p2 上对本测试床失败，风险项 R-04）。
 
 ---

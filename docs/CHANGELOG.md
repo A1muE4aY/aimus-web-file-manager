@@ -21,7 +21,7 @@
 ## [v0.1.2] — 未发布
 
 - **版本号**：`0.1.2`（开发中；`app/__init__.py` 尚未改号，按任务书 §7.1 在阶段七统一升号并重新打包）。
-- **状态**：开发中。阶段一（遗留问题复核与基线检查）已完成：v0.1.1 留下的六项遗留逐项复核，修复两个已确认的高优先级缺陷 D1、D2，新增 25 项回归用例，四层合计 744 项全绿（0 失败 / 0 错误 / 0 跳过），并在真实桌面 CU 上对两个缺陷做了端到端复验（`docs/reports/PHASE-01-LEGACY-v012.md`）。阶段二（文件列表布局与右键菜单）已完成：列宽与操作区固定、完整名称三条查看途径、三处自绘右键菜单，窄窗与 150% 缩放按断点收列；新增 8 项 e2e 用例与真实桌面 CU 前后证据（`docs/reports/PHASE-02-LAYOUT-v012.md`）。
+- **状态**：开发中。阶段一（遗留问题复核与基线检查）已完成：v0.1.1 留下的六项遗留逐项复核，修复两个已确认的高优先级缺陷 D1、D2，新增 25 项回归用例，四层合计 744 项全绿（0 失败 / 0 错误 / 0 跳过），并在真实桌面 CU 上对两个缺陷做了端到端复验（`docs/reports/PHASE-01-LEGACY-v012.md`）。阶段二（文件列表布局与右键菜单）已完成：列宽与操作区固定、完整名称三条查看途径、三处自绘右键菜单，窄窗与 150% 缩放按断点收列；新增 8 项 e2e 用例与真实桌面 CU 前后证据（`docs/reports/PHASE-02-LAYOUT-v012.md`）。阶段三（统一启动脚本）已完成：`run.bat` / `run.sh` + `scripts/launcher.py` 一个入口、八命令与交互菜单、退出码语义 0/1/2/3、只作用于自己 PID 的停止阶梯、默认端口改为 32579、发行包不再生成 `start.cmd`/`stop.cmd`；四层合计 798 项 0 失败 0 错误（跳过 1），Windows 真实验收 34 项判定与 Linux（WSL2 Ubuntu 24.04）12 用例全部符合预期，验收暴露的 3 个真实缺陷（全新目录无法启动、外壳吞退出码、重复启动的矛盾提示）已修复并补回归测试（`docs/reports/PHASE-03-LAUNCHER-v012.md`）。
 - **起始日期**：2026-10-17。
 - **依据**：`dev_guide/0.1.2_.md`（用户提供的接力任务书，工作区未跟踪文件）。
 - **提交纪律**：每个阶段独立成提交，不把不同阶段的改动混在一起。
@@ -35,7 +35,8 @@
 | --- | --- | --- | --- |
 | 一 | 检查遗留问题与当前基线 | 已完成 | 六项遗留复核结论（①④⑤⑥通过、②部分、③确认缺陷 D1、⑤确认缺陷 D2）；D1 两层与 D2 的修复；新增回归 25 项（`tests/unit/test_request.py`、`tests/unit/test_broken_session.py`、`tests/unit/test_sftp_client.py`、`tests/integration/test_connection_flow.py`、`tests/integration/test_edit_api.py`）；决策 D-019；阶段报告 `docs/reports/PHASE-01-LEGACY-v012.md` |
 | 二 | 文件列表布局与右键菜单 | 已完成 | 固定表格布局与五槽位操作区（`frontend/assets/css/app.css:845-890`、`:1023-1052`）；自绘菜单与完整名称提示（`frontend/assets/js/overlay.js`，新增 281 行）；行/空白/连接三处菜单（`frontend/assets/js/files.js:516`/`:574`、`frontend/assets/js/connections.js:45`）；新增 `tests/e2e/test_browser_layout.py` 8 项与 `tests/integration/support.py` 的 `layout_fixture()`；真实桌面 CU 前后证据 24 张（`.temp/cu-v012-layout/`）；阶段报告 `docs/reports/PHASE-02-LAYOUT-v012.md` |
-| 三~七 | 统一启动脚本 / SSH 配置教程 / 回归与安全检查 / 真实桌面 CU 验收 / 版本与交付 | 未开始 | — |
+| 三 | 统一启动脚本 run.bat / run.sh | 已完成 | `scripts/launcher.py`（新增，约 990 行：`menu`/`start`/`status`/`stop`/`restart`/`logs`/`check`/`help` 八命令与交互菜单）；根目录两个外壳 `run.bat`（CRLF）与 `run.sh`；默认端口 8760 → **32579**（`app/core/config.py:51`/`:131`/`:369`、`config/config.example.json:5`）；`scripts/package.py` 改为分发 `run.bat`/`run.sh`/`scripts/launcher.py`、**不再生成** `start.cmd`/`stop.cmd`；POSIX 的 SIGTERM 正常清理（`app/main.py:243`）；`tests/unit/test_launcher.py` 39 项、`tests/integration/test_launcher_lifecycle.py` 7 项（生命周期 4 + `WrapperExitCodeTest` 外壳退出码 3）；决策 D-020；**Windows 真实验收 34 项判定全过**、Linux（WSL Ubuntu）真实验收同表，证据与原始输出见 `docs/reports/PHASE-03-LAUNCHER-v012.md` §5 |
+| 四~七 | SSH 配置教程 / 回归与安全检查 / 真实桌面 CU 验收 / 版本与交付 | 未开始 | — |
 
 ### 修复
 
@@ -45,6 +46,10 @@
 
 - **复制成功时界面没有任何反馈**（阶段二 L1）：`frontend/assets/js/files.js` 的 `copyText()`（`:504`）在成功分支调用 `toastOk`，而该文件的 import 只引入了 `{ toast, toastError, toastWarn }`（`:23`）——`toastOk` 未定义，`navigator.clipboard.writeText()` 成功时抛 `ReferenceError`，界面什么都不显示（正是任务书 2.3 点名要避免的「复制了却不知道成没成」）。新增的 e2e 用例五在首轮运行时就超时撞上它；修复为在 import 里补 `toastOk`（`frontend/assets/js/files.js:23`），成功/失败两条路现在都有带文本内容的提示。
 - **切换目录后可能留下指向旧行的菜单与提示**（阶段二 L2）：菜单与提示挂在 `document.body` 上，而 `renderTable()` 会把行整批换掉。新增 `closeOverlays()`（`frontend/assets/js/overlay.js:293`）并在重绘前调用（`frontend/assets/js/files.js:271`），让任务书 2.5 ④「切换目录要关闭」成为真的成立的行为（此前前端没有任何地方调用 `closeMenu`）。
+- **全新目录里 `run.bat start` 必然启动失败**（阶段三 D-A，Windows 真实验收发现）：`scripts/launcher.py:358` 的 `build_argv()` 无条件把配置路径以 `--config` 传给 `app/main.py`，而「默认配置文件不存在」在 `load_settings()`（`:270`，`:285-293`）里是被容忍的（用内置默认值），`app/main.py:7-15` 里显式 `--config` 指向不存在的文件却是致命错误 —— 于是 `check` 报「不存在，将使用内置默认值」而 `start` 直接 exit 2（`run.bat` 显示「启动失败：服务进程已经退出（退出码 2）」，首次使用便携包的用户第一步就卡住）。现在只在**配置真的存在**时才传 `--config`（`scripts/launcher.py:358-365`），并让 `start` 先提示「配置文件还不存在：<路径>，本次用内置默认值启动」；回归测试 `tests/unit/test_launcher.py` 的 `BuildArgvTest`（4 项）。
+- **`run.bat` 把「已经在跑」的退出码 3 吞成 0**（阶段三 D-B，Windows 真实验收发现）：`run.bat:45` 在 `if "%AWFM_CODE%"=="3" ( … )` 括号块里写成 `endlocal ^& exit /b 3`，块内的 `^` 让 `&` 变成**字面参数**，`endlocal` 照常执行（顺手销毁 `AWFM_CODE`）而 `exit /b 3` 从不执行；控制流落到 `run.bat:52` 的 `endlocal & exit /b %AWFM_CODE%` 时变量已不存在，展开为空 → `exit /b` 不带参数 → 返回 0。四变体批处理探针确认只有 `^&` 写法有这个行为；现改为 `endlocal & exit /b 3`，并由 `tests/integration/test_launcher_lifecycle.py` 的 `WrapperExitCodeTest` 直接跑外壳断言退出码。
+- **重复启动时先冒出「本次用内置默认值启动」**（阶段三 D-C，Linux 真实验收发现）：`scripts/launcher.py` 的 `cmd_start()` 原先在状态检查**之前**打印配置缺失提示，于是「AWFM 已经在运行，本次不会重复启动」前面会多出一行自相矛盾的「本次用内置默认值启动」。现在这组提示移到所有「拒绝启动」分支之后（`scripts/launcher.py:487-491`），顺序固定为：状态 → 端口 → Python → ssh 客户端 → 配置提示 → 启动；Windows 与 Linux 的 C03 转录复验后只剩「已经在运行」三行。
+- **测试运行器的「跳过」一列永远显示 0**（阶段三回归发现）：`scripts/test.py:33` 的 `STATUS_RE` 只认裸 `OK`，而 unittest 在「全部通过但有跳过」时打印的是 `OK (skipped=1)`（本阶段新增的 `SignalTest` 在 Windows 上按平台跳过），于是汇总表把「没跑的用例」记成 0，与该文件开头「跳过数单独列出来」的记录纪律相矛盾。现在正则也接受 `OK (…)`；单跑 unit 层复验：`1 跳过` 正确显示，并触发「1 项被跳过 —— 跳过的用例没有验证任何东西」的提示。
 
 ### 变更
 
@@ -55,6 +60,14 @@
 - `frontend/assets/js/util.js` 新增 `copyToClipboard()`（`:72`）：安全上下文走 `navigator.clipboard`，否则 `execCommand` 兜底，返回是否成功（供界面给出反馈）。
 - 新增决策 **D-019**「单次 SFTP WRITE = 最多 64 KiB，超过就拆帧」（`docs/DECISIONS.md`、`docs/ARCHITECTURE.md` 决策表、`docs/SECURITY.md` 资源上限表同步补行）。
 - `app/api/request.py` 增加 `text_body_limit()` 与 `json(max_bytes=…)`：只有明确在收文本的路径才放宽请求体上限；`docs/API.md` §2.1 与错误表、`docs/SECURITY.md` 的两处限额条目一并更正（含被改写后的新行号）。
+- **统一启动入口：`run.bat` / `run.sh` + `scripts/launcher.py`**（阶段三 3.3）：Windows 双击 `run.bat`、Linux/macOS 执行 `./run.sh`，两个外壳只做「切到脚本目录 → 找 Python → 原样转发参数」，逻辑只有一份 Python 实现；不带命令进交互菜单，带命令则 `start`/`status`/`stop`/`restart`/`logs`/`check`/`help`。退出码即状态：0 成功 / 1 失败 / 2 用法错误 / **3 已经在跑或没在跑（未做任何改动）**。见决策 D-020。
+- **默认端口 8760 → 32579**（阶段三 3.6）：`app/core/config.py:51`（内置默认）、`:131`（`ServerConfig`）、`:369`（配置解析兜底）、`config/config.example.json:5`、`tests/unit/test_config.py:39` 同步改；README、用户指南、API/SECURITY/RELEASE/TEST_PLAN 与 `app/api/security.py` 注释里的示例地址一并更正（历史报告与 `docs/TEST_REPORT.md` 保留原值，它们是当时的记录）。
+- **启动器的停止纪律**（阶段三 3.4）：`stop` 只认 `data/awfm.pid` 里的 PID，且要求该 PID 的映像名含 `python`（否则打印「拒绝停止：PID N 的映像名是 X，不是 python 进程。」）；**没有 PID 文件时绝不去动占用端口的程序**，只报告「AWFM 没有在运行（没有 PID 文件），但 127.0.0.1:32579 上有别的程序在监听。停止只作用于 AWFM 自己记录的进程，这里不会去动它。」；Windows 上后台进程收不到温和信号，先 `taskkill /PID N /T`，没退再**询问确认**，非交互终端一律当拒绝并退出 1（`--force --yes` 供自动化）。
+- **发行包不再生成 `start.cmd` / `stop.cmd`**（阶段三 3.6）：`scripts/package.py:50` 的 `STAGE_SCRIPTS = ("start.py", "launcher.py")`、`:51` 的 `STAGE_FILES` 加入 `run.bat`/`run.sh`，必需文件校验（`:223` 附近）改为检查 `scripts/launcher.py` + `run.bat` + `run.sh`；`scripts/start.py` 保留为**前台兼容入口**（等价 `run.bat start --foreground`）。
+- **POSIX 下 SIGTERM 走正常清理**：`app/main.py:243` 新增 `_install_signal_handlers()`（在 `_serve()` 开头调用），POSIX 上把 `SIGTERM` 转成 `KeyboardInterrupt`，复用既有的 `finally` 收尾（关闭检索/发现线程、`manager.disconnect_all()`），Windows 直接返回；Linux 上 `run.sh stop` 因此能走优雅停止而不是强杀（验收项 T-013 不留孤儿 ssh）。
+- `.gitattributes` 增加例外 `*.bat text eol=crlf`：`cmd.exe` 对 LF 结尾的 `.bat` 在有括号块与 `goto` 时行为不稳（`* text=auto eol=lf` 会把它签出成 LF），所以只对批处理钉 CRLF。
+- 新增决策 **D-020**「统一启动入口 = `run.bat` / `run.sh` + `scripts/launcher.py`」，并把 D-015 的包内脚本清单与「找不到解释器」的报错主体更新为 run.bat/run.sh（`docs/DECISIONS.md`）。
+- 测试：`tests/unit/test_launcher.py` 39 项（端口/默认值/退出码、映像名与 `looks_like_python` 矩阵、PID 文件读写与坏格式、`tail_text`、四态状态机、配置加载与端口覆盖、`build_argv`、SIGTERM 处理器）与 `tests/integration/test_launcher_lifecycle.py` 7 项（子进程跑真实生命周期、端口冲突、陈旧 PID 文件、无 tty 菜单共 4 项，另加外壳退出码的 `WrapperExitCodeTest` 3 项）。
 
 ### 已知限制
 
@@ -63,6 +76,8 @@
 - 阶段二的「悬浮提示」在真实桌面 CU 里只能由**点击/键盘焦点**两条路径留证：Windows CU 驱动没有独立的 hover 原语（`drag` 也是按下拖动），悬浮路径改由 e2e 的真实 `Input.dispatchMouseEvent` 覆盖（`tests/e2e/test_browser_layout.py` 用例二）。
 - 阶段二的窄窗断点（1280 / 1120 / 1020 / 820）来自 2560×1440 / 显示缩放 1.25 与 1240×900 窗口两组实测，**不是通用阈值**；其它分辨率与系统缩放下观感可能不同，但「先收元信息、最后动操作区」的顺序是稳定规则。
 - v0.1.1 遗留未验证项与人工介入点见 `docs/reports/PHASE-06-CU-ACCEPTANCE.md` §5；阶段一对它们的逐条复核结论见 `docs/reports/PHASE-01-LEGACY-v012.md` §6.2（④⑤⑥ 已消除、① 部分消除、② 仍未验证）。
+- 阶段三的 Windows 真实验收里，「后台服务不会被温和停止」是**平台行为**而不是缺陷：启动器用 `DETACHED_PROCESS` 起的 python 没有控制台窗口，`taskkill /PID N /T`（不带 `/F`）会被 Windows 拒绝，因此 `stop` 必然要走到「询问后再强制终止」这一步；POSIX 侧有 SIGTERM 处理器，走的是正常退出路径。
+- 阶段三的 Linux 验收只在**本机 WSL2 Ubuntu**（`/usr/bin/python3` 3.12.3）上做，没有第二台原生 Linux 宿主机；测试虚拟机 CentOS Stream 10 是 SSH 目标机，不能当宿主。macOS 完全未验证。
 
 ## [v0.1.1] — 2026-10-16（未打标签）
 
