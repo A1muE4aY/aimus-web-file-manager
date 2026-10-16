@@ -36,11 +36,15 @@ function hostInfo(conn) {
 function updateToolbar() {
   const conn = activeConnection();
   const connected = Boolean(conn && isConnected(conn.id));
+  // 会话被判成「已经断了」时，主区继续留着上一次的列表：列表上方的横幅会写清
+  // 原因，按钮也变成「重新连接」。直接把列表换成占位提示会让用户丢掉上下文，
+  // 还以为是自己点错了（v0.1.2 缺陷 D2）。
+  const broken = Boolean(conn && !connected && (conn.session || {}).state === "error");
   const selected = state.selected;
   const selectable = Boolean(selected && (selected.type === "file" || selected.type === "symlink"));
 
-  $("#content").hidden = !connected;
-  $("#placeholder").hidden = connected;
+  $("#content").hidden = !connected && !broken;
+  $("#placeholder").hidden = connected || broken;
   $("#write-toggle-wrap").hidden = !connected;
   $("#host-info").textContent = connected ? hostInfo(conn) : "";
   $("#btn-up").disabled = !connected || !state.parent;
@@ -53,7 +57,13 @@ function updateToolbar() {
   search.render();
 }
 
-async function enterConnection(id) {
+/**
+ * 进入一条连接（path 省略时进登录家目录）。
+ *
+ * path 用在「掉线后重新连接」上：用户刚才看的就是那个目录，连上后应当回到
+ * 那里，而不是跳回家目录（v0.1.2 缺陷 D2）。
+ */
+async function enterConnection(id, path) {
   const conn = connectionById(id);
   if (!conn) return;
   // 换连接时先清掉上一次的检索结果：那些路径属于另一台机器，留着只会误导。
@@ -62,7 +72,7 @@ async function enterConnection(id) {
   connections.renderSidebar();
   updateToolbar();
   const session = conn.session || {};
-  await files.loadDirectory(session.home || "/");
+  await files.loadDirectory(path || session.home || "/");
   updateToolbar();
 }
 
@@ -263,6 +273,16 @@ async function boot() {
     onDelete: handleDelete,
     onCompress: handleCompress,
     onExtract: handleExtract,
+    onReconnect: function (connectionId, path) {
+      return connections.connectFlow(connectionId, { path: path });
+    },
+    onConnectionLost: function () {
+      // 刷新连接卡片后重画一次列表：横幅上的按钮要跟着从「重试」变成「重新连接」。
+      return connections.refreshConnections().then(function () {
+        updateToolbar();
+        files.render();
+      });
+    },
   });
   search.initSearch({ onLocate: handleLocate });
   edit.initEdit({ onSaved: handleSaved });

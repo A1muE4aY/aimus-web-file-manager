@@ -291,6 +291,22 @@ drwx******    ? aimu     aimu         4096 Oct 15 00:06 sub
 | 非管理员可读 | 清单、`preferences.ini`、`vmnetdhcp.conf`/`leases`、邻居表、`vmrun` |
 | 非管理员读不到 | `vmware-vmx.exe` 的命令行与路径（要更高权限）—— 「跳过并解释原因」的真实样本 |
 
+## D-019 单次 SFTP WRITE = 最多 64 KiB，超过就拆帧（服务端整包上限 256 KiB）
+
+- **决策**：`SftpClient.write_chunk` 把超过 `MAX_WRITE_CHUNK`（64 KiB）的数据拆成多个 `SSH_FXP_WRITE` 帧依次发送，每帧带自己的偏移；两个常量（`MAX_WRITE_CHUNK`、服务端整包上限 `OPENSSH_MAX_PACKET_BYTES` = 256 KiB）钉在 `app/ssh/sftp_protocol.py`。
+- **备选**：
+  - A. 只让调用方自己分块（在线编辑保存时按 64 KiB 切）—— 只修好一条路径；`upload_stream`、`ChunkWriter`（压缩打包）与将来的调用方仍可能再犯，而犯错的代价是「整条通道被服务端掐断」，不是一次可恢复的报错。
+  - B. 在 `SftpTransport.transact` 里拒绝超长请求帧 —— 报错位置更靠底层，但只是把「写死连接」换成「一直报错」，大文件依旧写不进去。
+- **理由**：
+  1. `write_chunk` 是所有写入路径的唯一收口（`upload_stream`、`ChunkWriter.write`），在这里拆帧一次性覆盖上传、覆盖写、在线编辑保存、压缩打包。
+  2. 拆分对上层完全透明：偏移、帧序、写完后的回读校验（`upload_stream` 用 `STAT` 比对字节数）都不变。
+  3. 64 KiB 与读取块保持一致（D-007），并且给帧头（长度字段、类型、request-id、handle、偏移、数据长度字段）留足余量。
+- **代价与已实测的坑**：
+  1. 1.9 MiB 的保存从 1 帧变成 30 帧，多出 29 次往返；实测一次 1.9 MB 写入仍在 1 秒量级，可接受。
+  2. **这个上限不是协议的一部分，而是服务端实现的行为**：OpenSSH 的 `sftp-server` 用 `SFTP_MAX_MSG_LENGTH`（256 KiB）判**整包**长度，超限时打印 `bad message from ...` 并**结束连接**。客户端收不到任何 STATUS，只看到管道断开 —— 在本项目里表现为 `NotConnected`：「写入远端失败：连接已断开。」，极易被误判成网络问题。
+  3. 实测边界（WSL 测试床 OpenSSH_9.6p1 Ubuntu-3ubuntu13.20）：一次 WRITE 携带 261120 字节成功，262144 字节即断连；`MAX_FRAME_BYTES`（4 MiB）管的是**入站**帧，管不到这个上限。
+  4. 对应的真实缺陷（v0.1.2 阶段一 D1 第二层）：`app/services/editor.py:342` 用 `upload_stream(temp, [data])` 把在线编辑的整份文本当**一个**块写出去，于是 256 KiB 以上的文件「能打开、保存必失败」。回归测试：`tests/unit/test_sftp_client.py`（5 项，含实测失败尺寸 262144）与 `tests/integration/test_edit_api.py` 的 `test_file_between_the_transport_ceiling_and_the_edit_limit_saves`。
+
 ---
 
 ## 已收敛的待决策项

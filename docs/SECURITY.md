@@ -207,6 +207,7 @@
 | JSON 请求体 / 响应体 | `MAX_JSON_BODY` / `MAX_JSON_BYTES` | 1 MiB / 8 MiB | `app/api/request.py:21`、`app/api/responses.py:29` |
 | 单个 SFTP 帧 | `MAX_FRAME_BYTES`（同时让「把 ASCII 当长度」立刻暴露，而不是试图分配几个 GB） | 4 MiB | `app/ssh/sftp_protocol.py:135` |
 | 单次读写块 | `MAX_READ_CHUNK` / `DEFAULT_CHUNK_SIZE` | 64 KiB（D-007） | `app/ssh/sftp_protocol.py:130`、`app/ssh/sftp_client.py` |
+| 单次 WRITE 帧 | `MAX_WRITE_CHUNK`（超过就拆帧；服务端整包上限 `OPENSSH_MAX_PACKET_BYTES` = 256 KiB，超限会被 sftp-server 掐断连接） | 64 KiB（D-007、D-019） | `app/ssh/sftp_protocol.py`、`app/ssh/sftp_client.py` `write_chunk` |
 | 并发会话 | `ssh.max_sessions`，达到上限时**回收连接时间最早的那条**（而不是拒绝新连接） | 4 | `app/services/connection_manager.py:267` |
 | 连接超时 | `ssh.connect_timeout_seconds`（同时用于 `ConnectTimeout` 与采集主机密钥） | 15 秒 | `app/core/config.py`、`app/ssh/ssh_launcher.py:96` |
 | 操作超时 | `ssh.command_timeout_seconds` 作为 `SftpTransport` 的 `operation_timeout`；超时由看门狗线程杀进程打断 | 60 秒 | `app/ssh/sftp_transport.py:326` `transact`、`:154` `_start_watchdog` |

@@ -4,7 +4,7 @@ import io
 import json
 import unittest
 
-from app.api.request import MAX_JSON_BODY, ApiRequest
+from app.api.request import JSON_TEXT_SLACK, MAX_JSON_BODY, ApiRequest, text_body_limit
 from app.core.errors import PayloadTooLarge, ValidationError
 
 
@@ -129,6 +129,71 @@ class JsonTests(unittest.TestCase):
     def test_unicode_is_preserved(self):
         payload = json.dumps({"name": "中文"}, ensure_ascii=False).encode("utf-8")
         self.assertEqual(self.body(payload).json()["name"], "中文")
+
+
+class TextBodyLimitTests(unittest.TestCase):
+    """在线编辑的传输层上限必须跟着业务上限走（v0.1.2 缺陷 D1）。"""
+
+    def test_default_edit_limit_gets_room_for_the_whole_body(self):
+        limit = 2 * 1024 * 1024
+        self.assertGreaterEqual(text_body_limit(limit), limit + JSON_TEXT_SLACK)
+
+    def test_a_body_at_the_edit_limit_parses(self):
+        # 1.9 MiB 是缺陷 D1 的现场：超过旧上限（1 MiB）、低于编辑上限（2 MiB）。
+        limit = 1900 * 1000
+        body = json.dumps({"text": "a" * limit}).encode("utf-8")
+        self.assertGreater(len(body), MAX_JSON_BODY)
+        request = make(method="PUT", headers={"Content-Length": str(len(body))}, body=body)
+        self.assertEqual(len(request.json(max_bytes=text_body_limit(limit))["text"]), limit)
+
+    def test_never_falls_below_the_generic_ceiling(self):
+        for limit in (0, 1, 1024):
+            self.assertEqual(text_body_limit(limit), MAX_JSON_BODY, limit)
+
+
+class JsonLimitTests(unittest.TestCase):
+    """json(max_bytes=...)：不传时行为不变，传了就必须生效。"""
+
+    def test_default_ceiling_still_applies_without_the_argument(self):
+        body = b'{"text": "' + b"a" * (MAX_JSON_BODY + 16) + b'"}'
+        request = make(method="PUT", headers={"Content-Length": str(len(body))}, body=body)
+        with self.assertRaises(PayloadTooLarge):
+            request.json()
+
+    def test_custom_limit_accepts_what_the_default_refuses(self):
+        text = "a" * (MAX_JSON_BODY + 1024)
+        body = json.dumps({"text": text}).encode("utf-8")
+        request = make(method="PUT", headers={"Content-Length": str(len(body))}, body=body)
+        self.assertEqual(request.json(max_bytes=text_body_limit(len(text)))["text"], text)
+
+    def test_custom_limit_is_enforced(self):
+        body = b'{"text": "' + b"a" * 200 + b'"}'
+        request = make(method="PUT", headers={"Content-Length": str(len(body))}, body=body)
+        with self.assertRaises(PayloadTooLarge) as ctx:
+            request.json(max_bytes=100)
+        self.assertIn("上限 100 字节", ctx.exception.detail)
+
+
+class DiscardTests(unittest.TestCase):
+    """回错误响应前把没读完的请求体丢掉（缺陷 D1 的另一半）。"""
+
+    def test_empty_body_has_nothing_to_do(self):
+        self.assertTrue(make().discard(1024))
+
+    def test_body_within_limit_is_drained(self):
+        request = make(method="PUT", headers={"Content-Length": "100"}, body=b"x" * 100)
+        self.assertTrue(request.discard(200))
+        self.assertEqual(request.rfile.read(), b"")
+
+    def test_body_beyond_limit_is_left_alone(self):
+        request = make(method="PUT", headers={"Content-Length": "100"}, body=b"x" * 100)
+        self.assertFalse(request.discard(50))
+        # 一个字都不读：坏客户端交给关连接处理，别为它读无限多的字节。
+        self.assertEqual(len(request.rfile.read()), 100)
+
+    def test_truncated_body_reports_failure(self):
+        request = make(method="PUT", headers={"Content-Length": "10"}, body=b"abc")
+        self.assertFalse(request.discard(100))
 
 
 if __name__ == "__main__":

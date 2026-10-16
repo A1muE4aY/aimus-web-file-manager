@@ -24,11 +24,11 @@ from typing import Any
 
 from app import __version__
 from app.api import handlers
-from app.api.request import ApiRequest
+from app.api.request import ApiRequest, text_body_limit
 from app.api.responses import send_error, send_html, send_text
 from app.api.security import new_session_token, verify_api_request
 from app.api.tickets import DownloadTickets
-from app.core.errors import AwfmError, InternalError, PathNotFound, ValidationError
+from app.core.errors import AwfmError, InternalError, NotConnected, PathNotFound, ValidationError
 from app.core.config import AppConfig
 from app.services.connection_manager import ConnectionManager
 from app.services.discovery import DiscoveryRegistry
@@ -63,6 +63,9 @@ TOKEN_PLACEHOLDER = "<!--AWFM_TOKEN-->"
 
 #: 唯一允许用「下载票据」代替会话令牌的路径（见 app/api/tickets.py）。
 TICKET_PATH_RE = re.compile(r"^/api/connections/[^/]+/download$")
+
+#: 回错误响应前最多花多久去丢弃没读完的请求体（见 _discard_request_body）。
+DRAIN_TIMEOUT_SECONDS = 5.0
 
 
 @dataclass
@@ -193,6 +196,11 @@ class AwfmRequestHandler(BaseHTTPRequestHandler):
                 self._dispatch_static(req)
         except AwfmError as exc:
             logger.info("%s %s -> %s（%s）", method, req.path, exc.code, exc.message)
+            # 回错误之前先把没读完的请求体丢掉。客户端还在上传时直接关连接，
+            # 刚写出去的响应会被一起冲掉，浏览器只会报「Failed to fetch」——
+            # 用户看不到任何原因（v0.1.2 缺陷 D1）。丢不干净才关连接（finally）。
+            if not body_consumed:
+                body_consumed = self._discard_request_body(req)
             send_error(self, exc)
         except (BrokenPipeError, ConnectionResetError):
             logger.debug("客户端在响应前断开：%s %s", method, req.path)
@@ -205,6 +213,33 @@ class AwfmRequestHandler(BaseHTTPRequestHandler):
             # 与其去猜该丢多少字节，不如直接关掉这条连接。
             if not body_consumed and req.content_length > 0:
                 self.close_connection = True
+
+    def _discard_request_body(self, req: ApiRequest) -> bool:
+        """把没读完的请求体读掉丢弃，好让错误响应顺利写出去。
+
+        Returns:
+            请求体是否已经处理干净（读完或本来就没有）。False 表示这条连接
+            不能再复用，调用方应当关掉它。
+        """
+        if req.content_length <= 0:
+            return True
+        limit = text_body_limit(self.ctx.config.security.max_edit_bytes)
+        try:
+            sock = self.connection
+            previous_timeout = sock.gettimeout()
+            sock.settimeout(DRAIN_TIMEOUT_SECONDS)
+        except OSError:  # pragma: no cover - 连接已经不可用
+            return False
+        try:
+            return req.discard(limit)
+        except OSError:
+            # 客户端停止上传（或读超时）：与其一直等它，不如关掉这条连接。
+            return False
+        finally:
+            try:
+                sock.settimeout(previous_timeout)
+            except OSError:  # pragma: no cover - 连接已经不可用
+                pass
 
     def _dispatch_api(self, req: ApiRequest) -> bool:
         if req.method == "HEAD":
@@ -221,7 +256,15 @@ class AwfmRequestHandler(BaseHTTPRequestHandler):
             from app.core.errors import PathNotFound
 
             raise PathNotFound("接口不存在。", detail=f"{req.method} {req.path}")
-        result = handler(self.ctx, req, **params)
+        try:
+            result = handler(self.ctx, req, **params)
+        except NotConnected as exc:
+            # 传输层说「连接已断开」时，会话还停在 connected：不标死的话界面会
+            # 一直显示「已连接」，用户点「重试」也只是对着同一个死会话重发
+            # （v0.1.2 缺陷 D2）。路由的具名组是唯一同时知道 connection_id 的
+            # 地方 —— sftp_transport 抛的 NotConnected 自己不带连接标识。
+            self.ctx.manager.mark_broken(params.get("connection_id"), exc)
+            raise
         del result
         # 处理函数要么自己写出了响应，要么走流式（也已开始写）。
         # 两种情况都把请求体读干净了（除了不需要读的 GET）。

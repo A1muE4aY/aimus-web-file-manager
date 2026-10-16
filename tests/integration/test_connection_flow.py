@@ -4,6 +4,7 @@ import contextlib
 import os
 import sys
 import unittest
+from urllib.parse import quote
 
 from app.core.errors import AwfmError, HostKeyUnknown, NotConnected
 from app.services import filesystem
@@ -14,6 +15,8 @@ from tests.integration.support import (
     TESTBED_HOME,
     count_testbed_ssh_processes,
     require_testbed,
+    running_server,
+    testbed_connection,
     testbed_environment,
 )
 
@@ -142,6 +145,79 @@ class SshFlowTests(unittest.TestCase):
         self.assertEqual(status["state"], "disconnected")
         self.assertFalse(status["connected"])
         self.assertIsNone(status["home"])
+
+
+@require_testbed
+class BrokenChannelTests(unittest.TestCase):
+    """通道被动断开后的状态与恢复路径（v0.1.2 缺陷 D2）。
+
+    真杀掉 ssh 子进程，而不是伪造一个 NotConnected：接口层必须如实报错，把会话
+    标成 error（旧版一直是「已连接」，卡片状态与实情不符），并且重新连接真的能救
+    回来（旧版的「重试」只是对着同一个死会话重发）。
+    """
+
+    CONNECTION = "wsl-broken"
+
+    def setUp(self):
+        self.stack = contextlib.ExitStack()
+        config, _keys = self.stack.enter_context(
+            testbed_environment(
+                connections=[testbed_connection(id=self.CONNECTION, allow_write=True)]
+            )
+        )
+        self.client = self.stack.enter_context(running_server(config))
+        self.addCleanup(self.stack.close)
+        self.expect(self.client.post("/api/connections/%s/connect" % self.CONNECTION, {}), 200)
+
+    def expect(self, response, status):
+        self.assertEqual(response.status, status, response)
+        return response
+
+    def files(self):
+        url = "/api/connections/%s/files?path=%s" % (self.CONNECTION, quote(TESTBED_HOME, safe=""))
+        return self.client.get(url)
+
+    def kill_channel(self):
+        """把通道真的弄断：杀掉这条会话的 ssh 子进程。"""
+        session = self.client.manager._sessions[self.CONNECTION]
+        process = session._transport._proc
+        process.kill()
+        process.wait(timeout=10)
+
+    def test_broken_channel_is_marked_and_can_be_reconnected(self):
+        self.expect(self.files(), 200)
+
+        self.kill_channel()
+        failed = self.files()
+        self.expect(failed, 409)
+        self.assertEqual(failed.code, "not_connected")
+        self.assertTrue(failed.error["message"])
+
+        # 会话状态要跟着变 —— 界面的连接卡片靠它决定显示什么。
+        status = self.client.get(
+            "/api/connections/%s/status" % self.CONNECTION
+        ).data["connection"]
+        self.assertEqual(status["state"], "error", status)
+        self.assertFalse(status["connected"])
+        self.assertTrue(status["last_error"], status)
+        listing = {
+            item["id"]: item["session"]
+            for item in self.client.get("/api/connections").data["connections"]
+        }
+        self.assertEqual(listing[self.CONNECTION]["state"], "error")
+
+        # 恢复路径：重新连接（界面上那个入口）必须真的能用。
+        self.expect(self.client.post("/api/connections/%s/connect" % self.CONNECTION, {}), 200)
+        self.expect(self.files(), 200)
+
+    def test_a_second_request_after_the_loss_is_refused_not_retried(self):
+        self.kill_channel()
+        self.expect(self.files(), 409)
+
+        # 标成 error 之后会话不再被交出去：界面据此把「重试」换成「重新连接」。
+        again = self.files()
+        self.expect(again, 404)
+        self.assertEqual(again.code, "session_not_found")
 
 
 if __name__ == "__main__":

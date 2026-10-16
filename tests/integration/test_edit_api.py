@@ -375,6 +375,33 @@ class EditApiTests(unittest.TestCase):
         self.assertEqual(self.remote_bytes(name), b"readable\n")
 
 
+    def test_file_between_the_transport_ceiling_and_the_edit_limit_saves(self):
+        """缺陷 D1 回归：1~2 MiB 的文件能打开，就必须能存回去。
+
+        传输层原来固定 1 MiB 上限，保存时被判成请求体过大（413），而读取走的是
+        编辑上限（默认 2 MiB）—— 于是这一段区间的文件「打得开、存不回去」。
+
+        这一条同时压住 D1 的第二层：整份正文会经过 `client.upload_stream(temp, [data])`，
+        而 OpenSSH 的 sftp-server 拒收整包超过 256 KiB 的消息并**直接结束连接**。
+        修好传输层上限之后，正是这个 256 KiB 的坎让保存报「写入远端失败：连接已断开」
+        （决策 D-019，`SftpClient.write_chunk` 负责拆帧）。
+        """
+        name = "big-save.txt"
+        original = "A" * (1900 * 1000) + "\n"
+        size = len(original.encode("utf-8"))
+        self.assertGreater(size, 1024 * 1024)
+        self.assertLess(size, DEFAULT_EDIT_LIMIT)
+        baseline = self.fresh(name, original)
+        self.assertEqual(baseline["size"], size)
+
+        edited = original[:-1] + "B\n"
+        saved = self.save(name, edited, base_sha256=baseline["sha256"])
+
+        self.assertEqual(saved.status, 200, saved)
+        self.assertEqual(saved.data["file"]["size"], len(edited.encode("utf-8")))
+        self.assertEqual(self.remote_bytes(name).decode("utf-8"), edited)
+
+
 @require_testbed
 class EditLimitTests(unittest.TestCase):
     """上限生效时，读与写都要给出可理解的 413，而不是把内存吃掉。"""

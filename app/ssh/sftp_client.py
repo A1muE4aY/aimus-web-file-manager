@@ -177,13 +177,29 @@ class SftpClient:
         return response.body.raw_string()
 
     def write_chunk(self, handle: bytes, offset: int, data: bytes) -> None:
-        self._t.transact(
-            proto.SSH_FXP_WRITE,
-            proto.encode_string(handle) + proto.encode_uint64(offset) + proto.encode_string(data),
-            expect=(),
-            accept_status=_OK,
-            context="写入文件内容",
-        )
+        """把一段数据写到句柄的 `offset` 处。
+
+        **超过 `MAX_WRITE_CHUNK` 的数据会被拆成多个 WRITE 帧**：协议上每个 WRITE
+        只能带一个 `string`，而 OpenSSH 的 sftp-server 会拒收整包超过
+        `OPENSSH_MAX_PACKET_BYTES` 的消息并直接结束连接。一次写 1.9 MiB 曾经被当成
+        「网络断了」——客户端只看到管道写失败，服务端那边其实好好地活着，只是把
+        这条连接掐了。拆分放在这里是因为它是所有写入路径（`upload_stream`、`ChunkWriter`）
+        的唯一收口。
+        """
+        view = memoryview(data)
+        sent = 0
+        while sent < len(view):
+            piece = view[sent : sent + proto.MAX_WRITE_CHUNK]
+            self._t.transact(
+                proto.SSH_FXP_WRITE,
+                proto.encode_string(handle)
+                + proto.encode_uint64(offset + sent)
+                + proto.encode_string(bytes(piece)),
+                expect=(),
+                accept_status=_OK,
+                context="写入文件内容",
+            )
+            sent += len(piece)
 
     # -- 流式传输 ---------------------------------------------------------
 

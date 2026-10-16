@@ -19,7 +19,7 @@ import {
 } from "./util.js";
 import { entryIcon } from "./icons.js";
 import { toast, toastError, toastWarn } from "./toast.js";
-import { state, activeConnection, allowWrite } from "./state.js";
+import { state, activeConnection, allowWrite, isConnected } from "./state.js";
 
 let deps = {
   onSelectionChange: function () {},
@@ -30,6 +30,12 @@ let deps = {
   onDelete: function () {},
   onCompress: function () {},
   onExtract: function () {},
+  // 连接断了以后要重新连上时调用（id, 想回到的目录），返回是否连上。
+  onReconnect: function () {
+    return Promise.resolve(false);
+  },
+  // 发现通道已经断了时调用，用来马上把连接卡片与工具栏刷成实际状态。
+  onConnectionLost: function () {},
 };
 
 export function initFiles(hooks) {
@@ -43,8 +49,40 @@ function bindRetry() {
   const retry = $("#btn-retry-list");
   if (!retry) return;
   retry.addEventListener("click", function () {
-    refresh();
+    retryLoad();
   });
+}
+
+/** 服务端回的「连接已经断了」这类错误码。 */
+function isLostCode(code) {
+  return code === "not_connected" || code === "session_not_found";
+}
+
+/** 现在这条连接是不是已经不能用了：会话断了，或上一次请求就是这么失败的。 */
+function connectionLost() {
+  const conn = activeConnection();
+  if (!conn) return false;
+  if (!isConnected(conn.id)) return true;
+  return Boolean(state.listError && isLostCode(state.listError.code));
+}
+
+/**
+ * 「重试」：连接还活着就重发一次请求；连接已经断了就先重新连上再回到原目录。
+ *
+ * 对着一个已经死掉的会话反复重发是没用的 —— 服务端那边通道早没了，用户只会
+ * 看到列表一直挂着「已过期」（v0.1.2 缺陷 D2）。重连走的是正常连接流程，
+ * 密码与主机指纹该确认的仍然要确认。
+ */
+async function retryLoad() {
+  const conn = activeConnection();
+  if (!conn) return;
+  if (connectionLost()) {
+    await deps.onReconnect(conn.id, state.path);
+    return;
+  }
+  await refresh();
+  // 这一趟才发现通道断了：接着重连，别让用户再点一次。
+  if (connectionLost()) await deps.onReconnect(conn.id, state.path);
 }
 
 function bindSortHeaders() {
@@ -101,9 +139,15 @@ export async function loadDirectory(path) {
     // 绝不能把上一次的结果当成最新列表继续显示（2.md 阶段一缺陷②）。
     state.stale = true;
     state.listStatus = "error";
-    state.listError = { message: error.message || "加载失败。", detail: error.detail || "" };
+    state.listError = {
+      message: error.message || "加载失败。",
+      detail: error.detail || "",
+      code: error.code || "",
+    };
     setNotice("error", error.message + (error.detail ? "（" + error.detail + "）" : ""));
     toastError(error);
+    // 通道断了：立刻让连接卡片与工具栏反映实际状态，不必等下一次轮询。
+    if (isLostCode(state.listError.code)) deps.onConnectionLost(error);
   } finally {
     state.loading = false;
     state.pendingPath = null;
@@ -229,6 +273,10 @@ function renderListStatus() {
     return;
   }
   banner.hidden = false;
+  // 连接断了时，横幅上那个按钮做的是「重新连接」而不是「重试」：
+  // 让人知道点下去会发生什么（v0.1.2 缺陷 D2）。
+  const retry = $("#btn-retry-list");
+  if (retry) retry.textContent = connectionLost() ? "重新连接" : "重试";
   if (text) {
     if (state.listError) {
       text.textContent =

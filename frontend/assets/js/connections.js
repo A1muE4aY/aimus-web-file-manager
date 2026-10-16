@@ -201,10 +201,10 @@ function connectionNode(item) {
   return node;
 }
 
-export function openConnection(id) {
+export function openConnection(id, options) {
   state.activeId = id;
   renderSidebar();
-  deps.onEnter(id);
+  deps.onEnter(id, options && options.path);
 }
 
 export async function doDisconnect(id) {
@@ -243,8 +243,13 @@ async function doDelete(item) {
   }
 }
 
-/** 需要密码就先问，再连。返回是否连上。 */
-export async function connectFlow(id) {
+/**
+ * 需要密码就先问，再连。返回是否连上。
+ *
+ * options.path 是要回到的目录（重连时用）：连上以后直接进那个目录，
+ * 而不是回到登录家目录。
+ */
+export async function connectFlow(id, options) {
   const item = connectionById(id);
   if (!item) return false;
   let password = "";
@@ -252,10 +257,10 @@ export async function connectFlow(id) {
     password = await askPassword(item);
     if (password === null) return false;
   }
-  return doConnect(id, password);
+  return doConnect(id, password, options);
 }
 
-export async function doConnect(id, password) {
+export async function doConnect(id, password, options) {
   const item = connectionById(id);
   try {
     await api.connect(id, password);
@@ -263,7 +268,7 @@ export async function doConnect(id, password) {
     await refreshConnections();
     if (error.code === "host_key_unknown") {
       const trusted = await confirmUnknownHostKey(id, error, item);
-      if (trusted) return doConnect(id, password);
+      if (trusted) return doConnect(id, password, options);
       return false;
     }
     if (error.code === "host_key_mismatch") {
@@ -275,7 +280,7 @@ export async function doConnect(id, password) {
       // 密码错一次不值得让用户重新点一遍「连接」。
       const again = await askPassword(item, "认证失败，请重新输入密码。");
       if (again === null) return false;
-      return doConnect(id, again);
+      return doConnect(id, again, options);
     }
     toastError(error);
     return false;
@@ -284,7 +289,7 @@ export async function doConnect(id, password) {
   // 必须先刷新连接列表再进入连接：进入时要用刚连上的 session.home，
   // 顺序反了就会拿旧的空 session 去 loadDirectory，界面落到根目录 "/"。
   await refreshConnections();
-  openConnection(id);
+  openConnection(id, options);
   return true;
 }
 

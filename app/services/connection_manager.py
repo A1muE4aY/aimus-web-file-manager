@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 from app.core.config import AppConfig, save_config
 from app.core.errors import (
+    AwfmError,
     ConnectionNotFound,
     SessionNotConnected,
     ValidationError,
@@ -280,6 +281,24 @@ class ConnectionManager:
             # 后者只是操作顺序问题，界面该给出的下一步完全不同。
             self.get_connection(cid)
         return require_session(session if connected else None, cid)
+
+    def mark_broken(self, connection_id: str | None, error: AwfmError) -> None:
+        """把某条会话标成「已经断了」（传输层报连接丢失时由接口层调用）。
+
+        没有对应会话就安静地返回：这里只是把已经发生的事实记下来，不该因为
+        「会话早就不在了」再抛一个新错误盖住原始错误（v0.1.2 缺陷 D2）。
+
+        Args:
+            connection_id: 受影响连接的 id；为空表示这次调用与具体连接无关。
+            error: 触发标记的异常，它的 message 会作为断开原因留在会话状态里。
+        """
+        if not connection_id:
+            return
+        with self._lock:
+            session = self._sessions.get(connection_id)
+        if session is None:
+            return
+        session.mark_broken(error.message)
 
     def session_status(self, connection_id: str) -> dict:
         cid = validate_connection_id(connection_id)

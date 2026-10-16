@@ -336,6 +336,29 @@ class RemoteSession:
                 logger.info("已断开 %s", self.connection.target_label)
             return self.status()
 
+    def mark_broken(self, message: str) -> dict:
+        """把会话标成「已经断了」，并保留断掉的原因。
+
+        传输层报「与远端的连接已断开」时调用。这和用户主动断开**不是一回事**：
+        这里状态是 error，原因要留着给界面显示 —— 否则卡片会一直显示「已连接」，
+        用户点「重试」也只是对着同一个死会话重发（v0.1.2 缺陷 D2）。
+
+        Args:
+            message: 面向用户的断开原因，通常取异常的 message。
+
+        Returns:
+            最新的会话状态（同 status()）。
+        """
+        with self._lock:
+            already = self._state == STATE_ERROR
+            self._teardown()
+            self._state = STATE_ERROR
+            # 第一次拿到的那条最接近根因；后面的调用多半是同一个断链的余波。
+            if not already or not self._last_error:
+                self._last_error = message
+            logger.warning("连接 %s 已断开：%s", self.connection.target_label, safe_for_log(message))
+            return self.status()
+
     def _teardown(self) -> None:
         """释放子进程与句柄。**必须可重入**，任何路径上都调用它。"""
         transport, self._transport = self._transport, None

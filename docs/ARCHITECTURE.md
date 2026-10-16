@@ -139,6 +139,7 @@ AWFM 解决的问题是：**在一台 Windows 宿主机上，用浏览器管理�
 | D-011 | 连接层 = 原生 SFTP v3 协议，经 `ssh -s sftp` | 五点：① 信息完整性——`flags=15` 的完整 `ATTRS` 带真实权限位，不被客户端遮蔽；② 无本地化依赖；③ 结构化 `STATUS` 码，不必匹配英文错误串；④ 文件名保真（长度前缀字符串）；⑤ 真流式。前提：Windows `ssh.exe` 管道二进制安全已实测 | 需要自己实现编解码；两个高频错误源已钉死在文档与代码注释里：**响应包第一个字段是请求 id**、**MKDIR/SETSTAT 的属性字段是完整 `ATTRS` 结构** |
 | D-012 | 用 WSL Ubuntu 的非 root `sshd` 作集成测试床（`127.0.0.1:2222`，用户 `aimu`） | 零提权、随时可用、可复现；比在一台真虚拟机上反复重装快得多 | 测试床只覆盖非特权路径：不含 `sudo`，PAM 与特权端口（<1024）不在覆盖范围；UID/GID 与 CentOS 不同；WSL 的 localhost 转发不代表真实网络可达性 |
 | D-013 | Windows 上一切文本 I/O 显式钉 UTF-8 | 控制台默认 GBK，中文日志会抛 `UnicodeEncodeError`；隐式编码还会让配置文件在不同区域设置下互不兼容 | `pin_stdio_encoding()` 在 `main()` 最前面调用；`open`/`write_text` 一律显式 `encoding="utf-8"` |
+| D-019 | 单次 SFTP WRITE 最多 64 KiB，超出由 `SftpClient.write_chunk` 拆帧 | OpenSSH 的 `sftp-server` 拒收整包超过 256 KiB 的消息并**直接结束连接**，客户端只会看到「写入远端失败：连接已断开」，会把「大文件保存不了」误判成网络问题 | `MAX_WRITE_CHUNK` / `OPENSSH_MAX_PACKET_BYTES` 在 `app/ssh/sftp_protocol.py`；拆分在 `app/ssh/sftp_client.py` `write_chunk`（上传、覆盖写、在线编辑保存、压缩打包共用这一条路）；实测 261120 字节可、262144 字节断；回归 `tests/unit/test_sftp_client.py` |
 | D-014 | 密码从不持久化 | 把密码写进本地 JSON，其安全性完全依赖该文件的 ACL，而本项目默认以非管理员账户运行、无法保证 ACL 正确；与其提供一个「看起来安全」的选项，不如不提供 | 配置文件里**没有**密码字段（`app/models/connection.py` 模块 docstring）；密码只在 `POST …/connect` 请求体里传入、只存在于内存会话；代价是每次重连都要重新输入 |
 
 **仍未决的相关项**：P-002（`SSH_ASKPASS` 能否携带参数，阶段 03 实测）；P-005（取主机指纹的方案已改为「临时 `UserKnownHostsFile` + `StrictHostKeyChecking=no` 连一次读回 host key」，因为 `ssh-keyscan` 在 Windows OpenSSH 9.5p2 上对本测试床失败，风险项 R-04）。

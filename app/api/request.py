@@ -18,7 +18,29 @@ logger = logging.getLogger(__name__)
 #: JSON 请求体的上限。配置与连接信息都是小对象，
 #: 给到 1 MiB 已经远超实际需要 —— 上限存在的意义是「不给一个坏客户端
 #: 无限读内存的机会」，而不是精确够用。
+#:
+#: 在线编辑（PUT .../text）那条路径不适用这个数字，改用 `text_body_limit()`：
+#: 它的正文长度由 security.max_edit_bytes 决定，两处必须一致。
 MAX_JSON_BODY = 1024 * 1024
+
+#: JSON 转义的最坏情况：一个 1 字节的 UTF-8 字符（控制字符）写成 `\u00XX`
+#: 是 6 个字节。所以「正文字节数 × 6」是任何合法请求体的硬上界。
+JSON_ESCAPE_WORST_CASE = 6
+
+#: 除正文以外那些零碎字段（path / base_sha256 / newline / keep_bom…）的余量。
+JSON_TEXT_SLACK = 64 * 1024
+
+
+def text_body_limit(max_edit_bytes: int) -> int:
+    """在线编辑这条路径允许的请求体上限。
+
+    传输层的上限必须**跟着业务上限走**：能打开多大的文件由
+    `security.max_edit_bytes`（默认 2 MiB）决定，而 JSON 传输层原来固定
+    1 MiB —— 于是 1~2 MiB 的文件「打得开、存不回去」，保存时被判成请求体过大
+    （验收遗留事项③，v0.1.2 缺陷 D1）。这里按正文上限反推传输层上限，
+    两者不会再打架。
+    """
+    return max(MAX_JSON_BODY, int(max_edit_bytes) * JSON_ESCAPE_WORST_CASE + JSON_TEXT_SLACK)
 
 
 class ApiRequest:
@@ -89,20 +111,49 @@ class ApiRequest:
     def rfile(self):
         return self.handler.rfile
 
-    def json(self) -> dict[str, Any]:
-        """读取并解析 JSON 请求体。空请求体视为 `{}`。"""
+    def discard(self, limit: int) -> bool:
+        """把没读完的请求体读掉并丢弃，为**回错误响应**让路。
+
+        拒绝一个带着请求体的请求时，如果我们直接回错误再关连接，客户端还在
+        上传当中：连接一关，刚写出去的响应会被一起冲掉，浏览器只会报
+        「Failed to fetch」，界面上看不到任何原因（v0.1.2 缺陷 D1 的另一半）。
+        所以先尽力把请求体丢干净，再回错误。
+
+        Args:
+            limit: 最多愿意丢弃多少字节。声明的请求体比它还大时不读 —— 那是
+                坏客户端，与其为它读无限多的字节，不如按老办法关掉连接。
+
+        Returns:
+            是否丢弃干净。False 表示调用方应当关闭这条连接。
+        """
+        length = self.content_length
+        if length <= 0:
+            return True
+        if length > limit:
+            return False
+        return len(self.rfile.read(length)) == length
+
+    def json(self, *, max_bytes: int | None = None) -> dict[str, Any]:
+        """读取并解析 JSON 请求体。空请求体视为 `{}`。
+
+        Args:
+            max_bytes: 这次请求允许的请求体上限，默认 `MAX_JSON_BODY`。
+                在线编辑那条路径要传 `text_body_limit(...)`：它的正文本来就
+                比普通 JSON 大得多。
+        """
         if self._json_loaded:
             assert self._json_cache is not None
             return self._json_cache
+        limit = MAX_JSON_BODY if max_bytes is None else int(max_bytes)
         length = self.content_length
         if length == 0:
             self._json_cache = {}
             self._json_loaded = True
             return self._json_cache
-        if length > MAX_JSON_BODY:
+        if length > limit:
             raise PayloadTooLarge(
                 "请求体过大。",
-                detail=f"{length} 字节，上限 {MAX_JSON_BODY} 字节。",
+                detail=f"{length} 字节，上限 {limit} 字节。",
             )
         raw = self.rfile.read(length)
         if len(raw) != length:

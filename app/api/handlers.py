@@ -11,7 +11,7 @@ import logging
 from typing import Any
 
 from app import __version__
-from app.api.request import ApiRequest
+from app.api.request import ApiRequest, text_body_limit
 from app.api.responses import begin_stream, send_ok
 from app.core.errors import AwfmError, Unauthorized, ValidationError
 from app.models.connection import Connection
@@ -349,7 +349,9 @@ def save_text(ctx, req: ApiRequest, connection_id: str) -> None:
     写权限与内容冲突都在服务端重新确认（见 app/services/editor.py）：
     前端按钮是否可用只是提示，不能当成授权。
     """
-    payload = req.json()
+    # 传输层上限跟着在线编辑的内容上限走：正文比普通 JSON 大得多，用默认的
+    # 1 MiB 会把「打得开、存不回去」的文件挡在门外（v0.1.2 缺陷 D1）。
+    payload = req.json(max_bytes=text_body_limit(_edit_limit(ctx)))
     if not isinstance(payload, dict):
         raise ValidationError("请求体必须是一个 JSON 对象。")
     path = payload.get("path")
