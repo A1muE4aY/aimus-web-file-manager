@@ -114,7 +114,7 @@ class AwfmRequestHandler(BaseHTTPRequestHandler):
         """Server 头的值。
 
         基类实现是 server_version + " " + sys_version，留空 sys_version 会得到
-        一个带尾随空格的 "AWFM/0.1.2 "；这里直接返回版本号本身。
+        一个带尾随空格的 "AWFM/<版本> "；这里直接返回版本号本身。
         """
         return self.server_version
 

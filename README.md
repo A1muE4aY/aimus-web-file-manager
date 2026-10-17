@@ -8,10 +8,10 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 
 | | |
 |---|---|
-| 当前版本 | `v0.1.2`（在 v0.1.1 基础上完成七阶段维护：遗留缺陷复核与修复、文件列表布局固定化与自绘右键菜单、统一启动入口 `run.bat` / `run.sh`、SSH 配置教程、回归与安全检查、真实桌面 CU 验收） |
+| 当前版本 | `v0.1.3`（在 v0.1.2 基础上完成五项需求：行内操作区独立容器与固定顺序、文件信息列独立布局、预览独立框、新建文件/文件夹与多选批量（含复制/剪切/粘贴）、启动脚本拆普通与高级且就绪后自动开浏览器） |
 | 运行时依赖 | **0 个第三方 Python 包**（系统 OpenSSH 客户端视为环境前提） |
-| 测试状态 | 单元 588 / 集成 125 / 安全 82 / 端到端 32，合计 **827 项全部通过**（0 失败 / 0 错误 / 1 跳过；见 [docs/reports/PHASE-06-CU-ACCEPTANCE-v012.md](docs/reports/PHASE-06-CU-ACCEPTANCE-v012.md) §5.1） |
-| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.2-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
+| 测试状态 | 单元 680 / 集成 147 / 安全 82 / 端到端 39，合计 **948 项全部通过**（0 失败 / 0 错误 / 1 跳过为 Windows 平台跳过；见 [docs/reports/PHASE-D-RELEASE-v013.md](docs/reports/PHASE-D-RELEASE-v013.md)） |
+| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.3-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
 
 ---
 
@@ -37,7 +37,11 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 | P1 | 文本文件在线编辑（编码探测、大小上限、保存冲突检测） | 已实现（v0.1.1） |
 | P1 | 重命名 / 压缩成 `.tar.gz` / 解压 / 删除 | 已实现（v0.1.1） |
 | P2 | 在线虚拟机发现（只读 VMware 状态，产出候选连接） | 已实现（v0.1.1，仅 VMware Workstation） |
-| P2 | 创建目录 | **未开放**：连接层已实现，未注册进 HTTP 端点 |
+| P1 | 新建空文件 / 新建空目录（排他创建，同名拒绝、绝不静默覆盖） | 已实现（v0.1.3） |
+| P1 | 复制 / 剪切 / 粘贴（整棵目录树、冲突整批拒绝并二次确认、符号链接跳过并报告） | 已实现（v0.1.3） |
+| P2 | 多选与批量操作（复制 / 剪切 / 删除 / 压缩 / 解压） | 已实现（v0.1.3） |
+| P2 | 行内操作区独立容器、固定七槽位顺序与文件信息列独立布局 | 已实现（v0.1.3） |
+| P2 | 预览独立框（框内滚动，长文本不撑破模态框） | 已实现（v0.1.3） |
 
 功能分级与非功能门槛的完整定义见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
 
@@ -79,7 +83,7 @@ python app\main.py --init-config
 | [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) | 功能/非功能需求、优先级、验收条件 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、模块划分、数据流、设计取舍 |
 | [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | 目录用途、命名规范、文件归属 |
-| [docs/API.md](docs/API.md) | HTTP API 定义、参数、响应、错误码（32 个端点） |
+| [docs/API.md](docs/API.md) | HTTP API 定义、参数、响应、错误码（35 个端点） |
 | [docs/SECURITY.md](docs/SECURITY.md) | 威胁模型、认证、密钥保护、路径校验、残余风险 |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | 技术选型、替代方案、决策理由（D-001 ~ D-021） |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发环境、调试方法、代码规范 |
@@ -87,7 +91,7 @@ python app\main.py --init-config
 | [docs/TEST_REPORT.md](docs/TEST_REPORT.md) | **实际**测试执行记录、验收项结论与证据 |
 | [docs/CHANGELOG.md](docs/CHANGELOG.md) | 版本变更记录 |
 | [docs/RELEASE.md](docs/RELEASE.md) | 发行说明、构建步骤、发行包内容、校验和 |
-| [docs/reports/](docs/reports/) | 阶段报告（v0.1.2 为 01~07）与最终开发报告 |
+| [docs/reports/](docs/reports/) | 阶段报告（v0.1.2 为 01~07；v0.1.3 见 `PHASE-A~D`）与最终开发报告 |
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | 面向使用者的操作说明 |
 | [dev_guide/](dev_guide/) | 规划文档与接力任务书（用户提供，只读输入） |
 

@@ -48,7 +48,8 @@ import build as build_checks  # noqa: E402  （同目录的静态校验，打包
 #: 进包的项目目录与文件（tests/、data/、logs/、.temp/、.archive/ 一律不进）
 STAGE_DIRS = ("app", "frontend", "docs")
 STAGE_SCRIPTS = ("start.py", "launcher.py")
-STAGE_FILES = ("README.md", "LICENSE", "config/config.example.json", "VERSION", "run.bat", "run.sh")
+STAGE_FILES = ("README.md", "LICENSE", "config/config.example.json", "VERSION",
+               "run.bat", "run.sh", "run-advanced.bat", "run-advanced.sh")
 
 EXCLUDE_DIR_NAMES = {"__pycache__", ".pytest_cache", ".mypy_cache", ".idea", ".vscode"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".log", ".zip", ".tmp"}
@@ -64,7 +65,8 @@ VERSION_TEMPLATE = """AWFM {version}
 
 便携版说明：
 * 运行只需要 Python 3.10 或更高版本，包内不含任何第三方依赖。
-* 双击 run.bat（Linux/macOS 用 ./run.sh）启动，菜单里可以查看状态、停止服务、看日志。
+* 双击 run.bat（Linux/macOS 用 ./run.sh）即普通启动：查环境、起服务、就绪后自动打开浏览器。
+* 要看菜单、换端口、看诊断时用 run-advanced.bat（Linux/macOS 用 ./run-advanced.sh）。
 * 命令行等价写法：run.bat start / run.bat status / run.bat stop / run.bat logs。
 * 真实配置写在 data/config.json（首次启动自动生成），日志写在 logs/。
 * 校验和见同目录的 SHA256SUMS.txt。

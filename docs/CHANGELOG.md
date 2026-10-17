@@ -21,6 +21,65 @@
 - **日期**：ISO `YYYY-MM-DD`。
 - **维护方式**：**人工维护**，不自动生成。变更发生时同步写，而不是发版前一次性补记。
 
+## [v0.1.3] — 2026-10-17
+
+- **版本号**：`0.1.3`（`app/__init__.py:7`；HTTP `Server` 头同步为 `AWFM/0.1.3`）。
+- **依据**：`dev_guide/0.1.3_.md`（用户提供的接力任务书）。五项需求：① 行内操作区独立容器与固定顺序 ② 文件信息列独立布局 ③ 预览独立框 ④ 新建文件/文件夹与多选批量 ⑤ 启动脚本拆普通与高级、就绪后自动开浏览器。
+- **状态**：已完成。四层回归 **948 项**（单元 680 / 集成 147 / 安全 82 / 端到端 39）0 失败 0 错误（1 项为 Windows 平台跳过），合计用时 1127.87s；静态检查 8 项通过；真实桌面 CU 14 条在任务书规定范围内全部执行并留证（`.temp/cu-v013/`）；发行包 `dist/AWFM-0.1.3-windows-x64.zip` 重建（110 个文件 / 1,697,942 字节 / zip 700,053 字节），SHA-256 `7ef7ebae885b69892b46cfac61865961198e2b474372287c9735f34ed593312f` 经 `Get-FileHash` 与 `certutil` 双工具复核一致，并在含空格的独立目录完成 `check → start --port 8791 --no-browser → GET / → GET /api/health → status → stop` 全流程验收（端口监听数归 0）。详见 `docs/reports/PHASE-D-RELEASE-v013.md`。
+
+### 阶段进度（依据 dev_guide/0.1.3_.md 的 A~D 四阶段）
+
+| 阶段 | 名称 | 状态 | 可核实的产物 |
+| --- | --- | --- | --- |
+| A | 后端能力与接口 | 已完成 | `/create`、`/copy`、`/move` 三个新端点（`app/api/handlers.py:409`/`:432`/`:452`，路由表 `handlers.py:561` 起），`delete`/`compress`/`extract` 兼容批量 `paths` 与 `compress.into`；排他创建（`SSH_FXF_CREAT\|EXCL` / `MKDIR`）不再「先查再建」；单测 `tests/unit/test_fileops.py` 95 项、集成 `tests/integration/test_fileops_api.py` 48 项；`docs/API.md` 升到 35 个端点 |
+| B | 界面布局与预览 | 已完成 | 行内操作区独立容器 `.file-actions-box`（`frontend/assets/css/app.css:917`）七槽位固定顺序、`<colgroup>` 列定义、`.preview-box` 独立预览框（`app.css:612`、`frontend/assets/js/preview.js:70`）；e2e `tests/e2e/test_browser_layout.py` 布局用例重写、新增 `tests/e2e/test_browser_v013.py` 7 项 |
+| C | 启动脚本 | 已完成 | 普通入口 `run.bat`/`run.sh`（不带参数 = 快速启动，就绪后自动开浏览器）与高级入口 `run-advanced.bat`/`run-advanced.sh`（不带参数进菜单）；`scripts/launcher.py` 新增 `quick` 命令、`open_default_browser()`、`pause_before_close()`；单测 `tests/unit/test_launcher.py` 58 项、`tests/unit/test_run_bat.py` 17 项、集成 `tests/integration/test_launcher_lifecycle.py` 18 项 |
+| D | 回归、CU 与交付 | 已完成 | 四层回归、`python scripts/build.py` 静态检查、真实桌面 CU 14 条（截图见 `.temp/cu-v013/`）、`dist/AWFM-0.1.3-windows-x64.zip` 与 `dist/SHA256SUMS.txt`、最终报告 9 项 |
+
+### 新增
+
+- **HTTP 端点从 32 个增加到 35 个**（阶段 A）：`POST /api/connections/{id}/create`（新建空文件或空目录）、`POST …/copy`（复制一批条目到另一个目录）、`POST …/move`（移动一批条目）。三者的请求体、响应形状、错误码见 `docs/API.md` §5.25~§5.27。
+- **排他创建**（阶段 A）：`app/services/fileops.py` 的 `create_entry()` 用 `client.open(target, SSH_FXF_WRITE|SSH_FXF_CREAT|SSH_FXF_EXCL, 0o644)` 建文件、`client.mkdir(target, 0o755)` 建目录。**刻意不做「先 stat 再建」**：两次系统调用之间被抢占时，先查再建会退化成一次静默覆盖，而排他创建把判断交给远端一次性完成；失败后再用 `lstat` 把 `EXCL` 冲突翻译成「同名条目已经存在。」（单测 `test_creation_uses_an_exclusive_open` 断言打开的 pflags 含 `EXCL` 且不含 `TRUNC`）。
+- **批量语义**（阶段 A）：`delete`、`compress`、`extract` 三个既有端点在不改变原有单条 `path` 写法的前提下接受 `paths` 数组；`compress` 增加 `into`（目标目录）与 `sources`（响应里的源列表，`source` 保留为第一项）；`extract` 单个压缩包时响应形状与 v0.1.2 完全一致，多个时返回汇总。批量中途失败时错误对象带 `extra.done` 与 `extra.failed`，界面据此说清「已经做成了什么、哪一条失败」。
+- **复制与移动的上限**：单批 ≤ `MAX_COPY_ENTRIES`（10000）个条目、≤ `MAX_COPY_BYTES`（512 MiB）、目录递归深度 ≤ `MAX_TREE_DEPTH`；符号链接一律**跳过**并在结果里报告（`skipped`，`code: "symlink_skipped"`），不伪造一个内容副本。移动逐项 `rename`，目标已存在时一律拒绝——SFTP v3 的 `RENAME` 不覆盖，而「先复制再删」会把一次原子改名退化成两步半成品。
+- **前端：行内操作区独立容器与固定七槽位**（阶段 B）：`actionCell()`（`frontend/assets/js/files.js:583` 起）改成在 `.file-actions-box` 这个独立容器里按**编辑 → 复制 → 剪切 → 重命名 → 删除 → 压缩 → 解压**固定顺序渲染，网格列宽固定（`app.css:917` 起、断点 `:1105`/`:1120`），用不上的操作**变灰而不是消失**，按钮文字居中、高度与圆角一致，长文件名优先截断，操作区不会压到名称列上。
+- **前端：文件信息列独立布局**（阶段 B）：`frontend/index.html` 的 `#file-table` 增加 `<colgroup>`——名称占剩余宽度（弹性、可截断）、大小/类型/权限/修改时间受控宽度、操作列固定；表头与每一行共用同一套列定义，所以表头永远与内容对齐，窄窗按断点先收次要列再考虑横向滚动。
+- **前端：预览独立框**（阶段 B）：`frontend/assets/js/preview.js:70` 起把预览正文放进 `.preview-box`（标题栏 `preview-box-title` + 状态 `preview-box-meta`，正文 `preview-box-body` 内部滚动），长文本不再把模态框撑破、不带动整页滚动，换行与缩进用 `pre` 原样保留；二进制与超限仍走既有的错误提示（`payload_too_large` 弹「太大」，其余 `toastError`）。
+- **前端：新建文件/文件夹、复制/剪切/粘贴、多选**（阶段 B）：工具栏新增「新建文件」「新建文件夹」「粘贴」「多选」（`frontend/index.html:77`~`:88`）。新建走 `fileops.js` 的 `createEntry()`：即时校验名称（空、`.`、`..`、`/`、NUL、>255 字符），**不做「先查再建」**，并且把「已创建」与「列表没刷新」分开报（`fileops.js:288` 起）。多选由表格上的 `has-select` 类控制复选框列显隐（`files.js:302`/`:403`），切模式不重绘列表，滚动位置不跳；操作条提供全选/复制/剪切/删除/压缩/解压/清空（`files.js:703` 起），剪贴板只存路径与来源连接并**禁止跨连接粘贴**（`state.js:54`）。
+- **启动脚本拆成普通与高级两个入口**（阶段 C）：`run.bat` / `run.sh` 不带参数就是普通启动（等价 `quick`：查环境 → 拒绝重复启动 → 启动并等 `/api/health` 通过 → **就绪后**用系统默认浏览器打开地址 → 打印地址/日志位置/停止方法 → 按回车关闭窗口），`run-advanced.bat` / `run-advanced.sh` 不带参数进交互菜单，带参数两者都原样透传。实现仍然只有 `scripts/launcher.py` 一份，四个外壳只做「找 Python + 转交参数」。
+- **`open_default_browser()`**（`scripts/launcher.py`）：Windows 用 `os.startfile`（ShellExecute，走系统默认浏览器），macOS 用 `open`，Linux 依次试 `xdg-open` / `gio open` / `sensible-browser`，只有都找不到且有 `DISPLAY` 时才退回 `webbrowser`。返回 `(是否成功, 说明)`，**打不开只提示地址、不算启动失败**（退出码仍 0）。
+- **`pause_before_close()`**：普通入口结束时停住窗口等一次回车，避免双击运行时「什么都没看清就闪退」；`AWFM_NO_PAUSE=1` 或非交互终端（`isatty()` 为假）直接返回，不挂住脚本。
+- 测试：`tests/e2e/test_browser_v013.py` 7 项（七槽位与复选框、多选计数、预览框内滚动、大文件走普通错误路径、新建对话框与真实落地、批量操作条可用性）；`tests/integration/test_launcher_lifecycle.py` 新增 `WrapperDefaultActionTest` 4 项（两个入口在不带参数与带参数时分别交给 `launcher.py` 什么 argv）；`tests/unit/test_run_bat.py` 重写为 17 项（四个外壳的 CRLF、ASCII 引导段、身份行、默认动作）。
+
+### 变更
+
+- **`docs/API.md` 升到 35 个端点**：新增 §5.25 create / §5.26 copy / §5.27 move 三节，后续小节整体顺延（rename 5.28、delete 5.29、compress 5.30、extract 5.31、discovery 5.32、scan 5.33、status 5.34、cancel 5.35）；§7.2 的写入口清单与 SFTP 原语清单同步（`open` 进入清单，`mkdir` 现在有两个调用者）。
+- **`docs/USER_GUIDE.md`**：步骤 3 整段改写为普通启动的真实输出与四条行为（打不开不算失败 / 不重复起实例 / 失败不闪退 / `--no-browser` 是唯一开关），新增「步骤 3.1 高级启动」；正文新增 §8.8 新建文件与文件夹（含拒绝提示表）、§8.9 复制剪切与粘贴、§8.10 多选与批量操作；§6 补了信息列布局与预览框说明。
+- **`AGENTS.md` 顶层白名单**增加 `run-advanced.bat` / `run-advanced.sh`，并把四个入口的分工写进那一行。
+- **`README.md`**：版本、发行包名、功能摘要（新建/复制剪切/多选/布局/预览框五行）与端点计数同步到 v0.1.3。
+
+### 修复
+
+- **「已选 N 项」在 e2e 里恒不出现**（阶段 B 测试侧发现，不是产品缺陷）：`tests/e2e/test_browser_v013.py` 原先用 `"已选 %d 项" % total` 拼进 JS 表达式，`total` 变量留在 Python 侧没被替换，浏览器里抛 `ReferenceError: total is not defined`。改成在 Python 里拼好字符串再用 `js()` 转义。
+- **e2e 布局用例拿绝对坐标跨行比较**（阶段 B 测试侧）：七槽位用例原先把所有行的 `top` 收进一个集合再断言长度为 1，实测 17 个不同的值；正确断言是**逐行**比较。窄窗折行用例同理：跨行只能比「相对本行 edit 的偏移」。
+- **`#file-table { min-width: 340px }` 在 661 CSS 视口的窄窗里多出 6px 横向滚动**（阶段 B）：`.table-wrap` 当时只有 334px，兜底值比它大就会强制出滚动条；改成 `min-width: 300px` 并写清原因（`frontend/assets/css/app.css:891` 附近）。
+- **普通启动成功时窗口会立刻关掉、看不出发生了什么**（阶段 C，自查发现）：`cmd_quick()` 成功分支原来直接返回，双击运行时窗口一闪而过；现在**总是**调用 `pause_before_close()`，并打印地址、日志位置与停止方法。
+
+### 安全
+
+- **新建的合法性由服务端最终判定**：名称校验在前后端各做一遍，前端只为即时反馈；`validate_remote_name()` 与 `realpath` + `stat` 的目录校验在服务端重做，路径越界（`../`、绝对路径逃逸）仍按既有的 `validate_remote_path()` 拒绝。前端能拦住不等于安全——任务书 §4 明确要求的两层校验都实现了。
+- **同名条目一律拒绝，不静默覆盖**：排他创建（`EXCL`/`MKDIR`）不依赖「先查」，并发抢占也会得到明确的「同名条目已经存在。」。复制/移动到已存在目标同理（复制需二次确认后才 `overwrite=true`，移动直接拒绝）。
+- **「允许写操作」没打开时新建与粘贴按钮是灰的，服务端也拒绝**：`require_write_permission("新建文件"/"新建文件夹")` 在服务端重新判定，绕过界面直接请求同样得到「该连接未开启写权限，无法新建文件。」。
+
+### 已知限制
+
+- `run-advanced.*` 与 `run.*` 是两套入口但只有一份实现；行为差异**只有**「不带参数时的默认动作」（quick vs menu），这一点由 `test_run_bat.py` 与 `WrapperDefaultActionTest` 双向钉住。
+- 浏览器自动打开在无图形环境（纯 SSH 会话、Windows Server Core、容器）里会失败——按设计只打印地址，不影响服务运行；这种情况下不会自动弹任何窗口。
+- 复制大目录仍是**逐文件流式搬运**（`download_chunks` → `upload_stream`），没有并发；512 MiB / 10000 条目是硬上限而不是性能目标。
+- 多选操作的进度以整体遮罩呈现，没有逐文件进度条；批量中途失败时保留已完成的部分（服务端如实报告 `done`/`failed`）。
+- 剪贴板只存在页面内存里：刷新页面、切换连接都会丢失，不做持久化。
+
+---
 ## [v0.1.2] — 2026-10-17
 
 - **版本号**：`0.1.2`（`app/__init__.py:7`；阶段七统一升号并重新打包，HTTP `Server` 头同步为 `AWFM/0.1.2`）。
