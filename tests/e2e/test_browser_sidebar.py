@@ -88,7 +88,9 @@ def layout_expr() -> str:
         "(function(){"
         "var sidebar = document.querySelector('.sidebar');"
         "var wrap = document.querySelector('.table-wrap');"
-        "var perm = document.querySelector('.col-perm');"
+        # 必须指到 <td>：colgroup 里的 <col class="col-perm"> 也带这个类，
+        # 而它的 display 是 table-column —— 抓错了会得到毫无意义的比对结果。
+        "var perm = document.querySelector('#file-table tbody td.col-perm');"
         "return JSON.stringify({"
         " sidebarWidth: sidebar.getBoundingClientRect().width,"
         " expectedWidth: Math.min(320, 0.42 * window.innerWidth),"

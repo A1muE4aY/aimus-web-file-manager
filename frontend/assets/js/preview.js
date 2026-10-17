@@ -57,14 +57,33 @@ export async function openPreview(entry, onDownload, onEdit) {
       h("p", { class: "hint", text: "这个文件不是 UTF-8 文本，按 " + data.encoding + " 显示。" })
     );
   }
-  // 预览是只读的：这里说得直白一点，别让用户以为改完就保存了。
+  // 正文放进一个独立的框（v0.1.3 §3）：标题与状态在上、内容在下，长文本只在
+  // 框内滚动，不会把整个模态框撑破，也不会挤走标题。
+  const meta = [
+    data.encoding === "utf-8" ? "UTF-8" : data.encoding,
+    formatSize(data.bytes_read) + (data.truncated ? "（只读了开头一段）" : ""),
+    "只读",
+  ].join(" · ");
+  body.appendChild(
+    h(
+      "div",
+      { class: "preview-box", "data-truncated": data.truncated ? "true" : "false" },
+      h(
+        "div",
+        { class: "preview-box-head" },
+        h("span", { class: "preview-box-title", title: data.path, text: entry.name }),
+        h("span", { class: "preview-box-meta", text: meta })
+      ),
+      h("div", { class: "preview-box-body" }, h("pre", { class: "preview-text", text: data.text }))
+    )
+  );
+  // 预览是只读的：这句放在框外，别让用户以为改完就保存了。
   body.appendChild(
     h("p", {
       class: "hint",
       text: "这里是只读预览，不会改动远端文件；要修改请点下面的「编辑」。",
     })
   );
-  body.appendChild(h("pre", { class: "preview-text", text: data.text }));
 
   const download = h("button", {
     type: "button",

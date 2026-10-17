@@ -607,6 +607,50 @@ td.col-time { font-family: var(--mono); font-size: 12px; color: var(--text-dim);
   word-break: break-all;
 }
 
+/* 预览内容装在自己的框里（v0.1.3 §3）：标题与状态在框头，正文在框身，
+   框身内部滚动，长文本撑不破模态框，也不会把标题挤出去。 */
+.preview-box {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.preview-box-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.preview-box-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-box-meta { flex: 0 0 auto; color: var(--text-faint); }
+
+/* 框身吸收剩余高度并自己滚动：无论内容多长，框的大小与位置都不变。 */
+.preview-box-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 58vh;
+  overflow: auto;
+  padding: 10px;
+}
+
 .preview-text {
   font-family: var(--mono);
   font-size: 12.5px;
@@ -614,8 +658,7 @@ td.col-time { font-family: var(--mono); font-size: 12px; color: var(--text-dim);
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-  max-height: 60vh;
-  overflow: auto;
+  /* 滚动交给 .preview-box-body，这里只负责保留换行与缩进。 */
 }
 
 .progress {
@@ -838,56 +881,93 @@ td.col-dir {
 
 /* ------------------------------------------------- 在线编辑与文件操作（v0.1.1 阶段四） */
 
-/* 文件列表用固定布局（v0.1.2 阶段二 2.2）。自动布局下列宽由内容撑开：
+/* 文件列表用固定布局 + 显式列定义（v0.1.3 §1/§2）。自动布局下列宽由内容撑开：
    名字越长，「大小 / 类型 / 权限 / 修改时间」被挤压得越厉害，操作列整体右移，
-   窄窗口和 150% 缩放下按钮会被推出可视区（真实 CU 实测）。固定布局后每列
-   宽度只由下面这些规则决定，和文件名长短、有没有图标都无关。 */
-#file-table { table-layout: fixed; }
+   窄窗口和 150% 缩放下按钮会被推出可视区（v0.1.2 真实 CU 实测）。固定布局后
+   每列宽度只由 <colgroup> 决定，与文件名长短、有没有图标都无关。
 
-/* 名字列吸收剩余宽度。这里写 auto 而不是百分比：百分比会与固定列抢宽度，
-   配合固定布局反而更容易把操作列挤出容器。名字再长也只影响它自己这一列，
-   截断后的完整名字有悬浮提示与键盘焦点两条路可看（2.3）。 */
-#file-table .col-name { width: auto; }
+   列宽写在 col 上而不是 th/td 上：固定布局里 col 的宽度优先于首行单元格的宽度，
+   于是「表头与每一行用同一套列定义」是由结构保证的，不靠两边各写一遍。 */
+/* min-width 是最后一道兜底：窗口窄到连「名称 + 操作」都放不下时才出现横向滚动
+   （.table-wrap 本身就能滚）。定成 300px 而不是更大，是因为 661 CSS 视口下
+   .table-wrap 只有 334px，兜底值一大反而会天天触发横向滚动。 */
+#file-table { table-layout: fixed; min-width: 300px; }
 
-#file-table .col-size { width: 96px; }
-#file-table .col-type { width: 88px; }
-#file-table .col-perm { width: 104px; }
-#file-table .col-time { width: 148px; }
+#file-table col.col-select { width: 36px; }
+#file-table col.col-name { width: auto; }
+#file-table col.col-size { width: 96px; }
+#file-table col.col-type { width: 88px; }
+#file-table col.col-perm { width: 104px; }
+#file-table col.col-time { width: 148px; }
+#file-table col.col-action { width: 352px; }
 
-/* 五个动作固定成五个槽位。按钮由 grid-column 钉在自己那一列上，于是
-   「重命名」在任何一行、任何文件类型下都落在同一个横坐标：某一行少了
-   「编辑」或多出「解压」，只会让对应槽位空着，不会把别的按钮挤走。
-   5 × 52px + 4 × 4px 间隙 = 276px，加上单元格左右内边距 20px = 296px。 */
-#file-table .col-action { width: 296px; text-align: right; }
+/* 复选框列只在多选模式里出现：切模式改表格上的一个类，不重绘列表。 */
+#file-table:not(.has-select) .col-select { display: none; }
+#file-table td.col-select { text-align: center; }
+#file-table td.col-select input { margin: 0; cursor: pointer; }
 
-#file-table .row-actions {
+/* 表头的「操作」整列居中（v0.1.3 §1）。 */
+#file-table th.col-action { text-align: center; }
+
+/* 七个动作恒常占七个槽位，顺序固定 编辑→复制→剪切→重命名→删除→压缩→解压。
+   按钮按 DOM 顺序落格，不写 grid-column：槽位数固定，于是同一个动作在任何一行、
+   任何文件类型下都落在同一个横坐标；不适用的动作只是灰着，它占的格子还在，
+   后面的按钮就不会往前挪（v0.1.2 的「换类型就跳位置」正是少了这一条）。
+   7 × 44px + 6 × 4px 间隙 = 332px，加单元格左右内边距 20px = 352px。 */
+#file-table .file-actions-box {
   display: grid;
-  grid-template-columns: repeat(5, 52px);
+  grid-template-columns: repeat(7, 44px);
   gap: 4px;
-  justify-content: end;
+  justify-content: center;
 }
 
-#file-table .row-actions .btn {
+/* 七个按钮共用一套盒子尺寸：一样高、一样的内边距与行高、文字水平垂直居中。
+   用 height + line-height 而不是 padding 撑高，是为了让「压缩」「解压」这种
+   两个字和「重命名」三个字的按钮基线也对齐。 */
+#file-table .file-actions-box .btn {
   width: 100%;
-  padding: 2px 0;
+  height: 24px;
+  padding: 0;
   font-size: 11.5px;
-  line-height: 1.5;
+  line-height: 22px;
   text-align: center;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-#file-table .row-actions .btn-edit-entry { grid-column: 1; }
-#file-table .row-actions .btn-extract-entry { grid-column: 2; }
-#file-table .row-actions .btn-rename-entry { grid-column: 3; }
-#file-table .row-actions .btn-compress-entry { grid-column: 4; }
-#file-table .row-actions .btn-delete-entry { grid-column: 5; color: var(--danger); border-color: var(--danger); }
-#file-table .row-actions .btn-delete-entry:hover:not(:disabled) { background: var(--danger-weak); }
+/* 禁用的按钮仍然占位并说明原因（title 在 files.js actionCell 里给），
+   它表达的是「这里本来有这个动作，只是现在不能用」，而不是把它藏起来。 */
+#file-table .file-actions-box .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+#file-table .file-actions-box .btn-delete-entry { color: var(--danger); border-color: var(--danger); }
+#file-table .file-actions-box .btn-delete-entry:hover:not(:disabled) { background: var(--danger-weak); }
 
 /* 名字被截断时：鼠标悬浮有自绘的完整名称提示，键盘聚焦也看得到。
    焦点环画在单元格上是内阴影，不会被 td 的 overflow:hidden 裁掉。 */
 #file-table .entry-name[data-truncated="true"] { cursor: help; }
 #file-table td.col-name:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* 多选操作条（v0.1.3 §4）：只在多选模式里出现，横在表格上方，不参与列宽计算。 */
+.sel-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 9px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sel-count { color: var(--text-dim); }
+.sel-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+
+/* 表单里输入框上方的小标题（压缩包名称 / 放在哪个目录 / 名称）。 */
+.field-label { margin: 10px 0 4px; font-size: 12px; color: var(--text-faint); }
+.field-label:first-child { margin-top: 0; }
 
 /* 编辑器：文本域独占主体，下面一行是状态与按钮。 */
 .editor-body { display: flex; flex-direction: column; }
@@ -1016,39 +1096,50 @@ td.col-dir {
   box-shadow: var(--shadow);
 }
 
-/* 窗口不够宽时压缩操作列，而不是让它自己换行（换行就是按钮位置乱动的开始）：
-   槽位从 52px 收到 44px，5 × 44 + 4 × 4 = 236px，加内边距 260px，按钮仍然
-   固定对齐，只是名字列让出一点宽度。再窄下去依次收起「权限」「类型」两列，
-   并把操作列折成 3 + 2 两行固定槽位，始终给名字列留下可读宽度。 */
+/* 窗口不够宽时先压缩槽位、再整列收起，按钮始终保持「七格」的固定结构：
+   槽位从 44px 收到 40px，7 × 40 + 6 × 4 = 304px，加内边距 324px，按钮仍然
+   逐格对齐，只是名字列让出一点宽度。这里不折行 —— 一折行，行高就跟着变，
+   同一屏里有的行一行、有的行两行，正是 §1 要消灭的「位置跳动」。 */
 @media (max-width: 1280px) {
-  #file-table .col-action { width: 260px; }
-  #file-table .row-actions { grid-template-columns: repeat(5, 44px); }
+  #file-table col.col-action { width: 324px; }
+  #file-table .file-actions-box { grid-template-columns: repeat(7, 40px); }
 }
 
+/* 权限列最先收起：它是逐行比较次数最少的一列，收掉它也还能看大小与时间。 */
 @media (max-width: 1120px) {
-  #file-table .col-perm, #file-table td.col-perm { display: none; }
+  #file-table col.col-perm,
+  #file-table th.col-perm,
+  #file-table td.col-perm { display: none; }
 }
 
-/* 再窄就折成两行固定槽位：上行 编辑 / 解压 / 重命名，下行 压缩 / 删除。
-   槽位固定，所以按钮落在哪一格只由动作本身决定，与文件名长短无关；
-   少了某个动作的行空着那一格，按钮也不会左右挪动。 */
 @media (max-width: 1020px) {
-  #file-table .col-type, #file-table td.col-type { display: none; }
-  #file-table .col-action { width: 166px; }
-  #file-table .row-actions { grid-template-columns: repeat(3, 46px); grid-template-rows: auto auto; }
-  #file-table .row-actions .btn-edit-entry { grid-column: 1; grid-row: 1; }
-  #file-table .row-actions .btn-extract-entry { grid-column: 2; grid-row: 1; }
-  #file-table .row-actions .btn-rename-entry { grid-column: 3; grid-row: 1; }
-  #file-table .row-actions .btn-compress-entry { grid-column: 1; grid-row: 2; }
-  #file-table .row-actions .btn-delete-entry { grid-column: 2; grid-row: 2; }
+  #file-table col.col-type,
+  #file-table th.col-type,
+  #file-table td.col-type { display: none; }
+  #file-table col.col-action { width: 310px; }
+  #file-table .file-actions-box { grid-template-columns: repeat(7, 38px); }
 }
 
-/* 最后连修改时间也收起（≤820px 那条全局规则已经收起了权限与类型）。
-   150% 缩放时 CSS 视口只剩 ~660px，此时表格里只剩「名称 / 大小 / 操作」三列，
-   大小列再收掉一点，避免名字列被压到只剩几个字。 */
+/* ≤1000px 再收起修改时间，给名字列留下可读宽度：150% 缩放时 CSS 视口约 990px，
+   此时表格里只剩「名称 / 大小 / 操作」三列，七格一行仍然放得下。 */
+@media (max-width: 1000px) {
+  #file-table col.col-time,
+  #file-table th.col-time,
+  #file-table td.col-time { display: none; }
+}
+
+/* VS Code 里并排两个编辑器这种更窄的窗口，七格一行实在放不下才折成 4 + 3：
+   块级网格里每一行仍然是固定槽位，所以跨行逐格对齐；所有行都折，行高一致。 */
 @media (max-width: 820px) {
-  #file-table .col-time, #file-table td.col-time { display: none; }
-  #file-table .col-size { width: 64px; }
+  #file-table col.col-action { width: 240px; }
+  #file-table .file-actions-box { grid-template-columns: repeat(4, 52px); }
+}
+
+/* 最后连大小列也收起：只剩「名称 / 操作」两列时，名字列还能读到十几个字。 */
+@media (max-width: 740px) {
+  #file-table col.col-size,
+  #file-table th.col-size,
+  #file-table td.col-size { display: none; }
 }
 
 /* ------------------------------------------------- 在线虚拟机发现（v0.1.1 阶段五） */

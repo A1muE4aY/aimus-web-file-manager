@@ -17,7 +17,7 @@ import * as edit from "./edit.js";
 import * as fileops from "./fileops.js";
 import * as discovery from "./discovery.js";
 import { openPreview } from "./preview.js";
-import { state, activeConnection, allowWrite, isConnected, connectionById } from "./state.js";
+import { state, activeConnection, allowWrite, isConnected, connectionById, hasClipboard } from "./state.js";
 
 const POLL_INTERVAL_MS = 20000;
 
@@ -53,8 +53,25 @@ function updateToolbar() {
   $("#btn-download").disabled = !(connected && selectable);
   $("#btn-upload").disabled = !(connected && allowWrite(conn.id));
   $("#chk-allow-write").checked = Boolean(connected && allowWrite(conn.id));
+  // v0.1.3 §4：新建与粘贴都是写操作，多选只是界面状态。
+  $("#btn-new-file").disabled = !(connected && allowWrite(conn.id));
+  $("#btn-new-folder").disabled = !(connected && allowWrite(conn.id));
+  const clip = state.clipboard;
+  // 跨连接的剪贴板不可粘贴：这里直接灰掉，点下去只会换来一句拒绝。
+  const canPaste = Boolean(
+    connected && allowWrite(conn.id) && hasClipboard() && clip.connectionId === conn.id
+  );
+  $("#btn-paste").disabled = !canPaste;
+  $("#btn-select-mode").disabled = !connected;
+  $("#btn-select-mode").setAttribute("aria-pressed", state.multiSelect ? "true" : "false");
+  $("#btn-select-mode").textContent = state.multiSelect ? "退出多选" : "多选";
+  $("#btn-select-mode").title = state.multiSelect
+    ? "退出多选模式并清空勾选"
+    : "在多选模式里给每一行显示复选框";
   // 搜索栏的可用性与范围文案也随连接状态走，统一在这里刷新。
   search.render();
+  // 多选操作条的按钮可用性由列表层决定（它知道勾了哪些、有几个压缩包）。
+  files.renderSelectionBar();
 }
 
 /**
@@ -136,7 +153,8 @@ function handleExtract(entry) {
 
 /** 写操作改动了远端，列表里的大小与修改时间必须跟着更新，否则像是没生效。 */
 function handleSaved() {
-  files.refresh();
+  // 返回 Promise：新建要等刷新完成后才能判断「建好了但列表里没有」。
+  return files.refresh();
 }
 
 async function toggleWrite(event) {
@@ -245,6 +263,18 @@ function bindHandlers() {
       input.value = "";
     }
   });
+  $("#btn-new-file").addEventListener("click", function () {
+    fileops.createEntry("file");
+  });
+  $("#btn-new-folder").addEventListener("click", function () {
+    fileops.createEntry("directory");
+  });
+  $("#btn-paste").addEventListener("click", function () {
+    fileops.paste();
+  });
+  $("#btn-select-mode").addEventListener("click", function () {
+    files.toggleMultiSelect();
+  });
   $("#chk-allow-write").addEventListener("change", toggleWrite);
 }
 
@@ -281,6 +311,38 @@ async function boot() {
     onDelete: handleDelete,
     onCompress: handleCompress,
     onExtract: handleExtract,
+    // v0.1.3 §4：新建、复制/剪切/粘贴与批量动作。列表层只报「选了哪些」，
+    // 对话框和请求都在 fileops 里 —— 同一个动作从行按钮和操作条进来时行为一致。
+    onCreateFile: function () {
+      fileops.createEntry("file");
+    },
+    onCreateFolder: function () {
+      fileops.createEntry("directory");
+    },
+    onCopy: function (entries) {
+      fileops.copyEntries(entries);
+    },
+    onCut: function (entries) {
+      fileops.cutEntries(entries);
+    },
+    onPaste: function () {
+      fileops.paste();
+    },
+    onDeleteMany: function (entries) {
+      fileops.deleteEntries(entries);
+    },
+    onCompressMany: function (entries) {
+      fileops.compressEntries(entries);
+    },
+    onExtractMany: function (entries) {
+      fileops.extractEntries(entries);
+    },
+    onMultiSelectChange: function () {
+      updateToolbar();
+    },
+    refreshList: function () {
+      return files.refresh();
+    },
     onReconnect: function (connectionId, path) {
       return connections.connectFlow(connectionId, { path: path });
     },
@@ -294,7 +356,14 @@ async function boot() {
   });
   search.initSearch({ onLocate: handleLocate });
   edit.initEdit({ onSaved: handleSaved });
-  fileops.initFileops({ onChanged: handleSaved });
+  fileops.initFileops({
+    onChanged: handleSaved,
+    // 剪贴板变了，工具栏的「粘贴」要立刻亮起来或灰下去。
+    onClipboardChange: updateToolbar,
+    refreshList: function () {
+      return files.refresh();
+    },
+  });
   transfer.initTransfer({
     onChanged: function () {
       files.refresh();

@@ -41,6 +41,20 @@ export const state = {
   listError: null,
   /** 正在请求的目录路径（过期提示里用它说明目标）。 */
   pendingPath: null,
+  /**
+   * 多选模式（v0.1.3 §4）。开启后行首出现复选框；关掉就清空勾选 ——
+   * 留着看不见的勾选，会让「删除」这类批量动作比看起来更危险。
+   */
+  multiSelect: false,
+  /** 多选时勾选的**路径**（不存条目对象：每次重绘条目对象都是新的）。 */
+  checked: [],
+  /**
+   * 剪贴板：{ mode: "copy" | "cut", connectionId, directory, paths, names }。
+   *
+   * 只存路径与来源连接：条目本身可能是几 GB 的目录，「复制」在粘贴那一刻才真正
+   * 动远端。跨连接禁止粘贴 —— 两台机器上的同一条路径不是同一个东西。
+   */
+  clipboard: null,
 };
 
 /**
@@ -104,4 +118,47 @@ export function isConnected(id) {
 export function allowWrite(id) {
   const item = connectionById(id);
   return Boolean(item && item.allow_write);
+}
+
+/* --------------------------------------------------- 多选与剪贴板（v0.1.3） */
+
+/** 这个路径当前被勾选了吗。 */
+export function isChecked(path) {
+  return state.checked.indexOf(path) >= 0;
+}
+
+/** 勾选 / 取消勾选一条；返回勾选后的状态。 */
+export function toggleChecked(path) {
+  const index = state.checked.indexOf(path);
+  if (index >= 0) state.checked.splice(index, 1);
+  else state.checked.push(path);
+  return index < 0;
+}
+
+/** 一次性把勾选设成给定路径（全选、清空都用它）。 */
+export function setChecked(paths) {
+  state.checked = Array.isArray(paths) ? paths.slice() : [];
+}
+
+export function clearChecked() {
+  state.checked = [];
+}
+
+/**
+ * 勾选的条目（按当前列表顺序）。
+ *
+ * 只返回仍然存在于列表里的路径：勾选之后目录可能被刷新过，已经消失的条目不该
+ * 被带进批量操作 —— 那会让服务端拿到一批不存在的路径。
+ */
+export function checkedEntries() {
+  if (!state.checked.length) return [];
+  const wanted = state.checked;
+  return state.entries.filter(function (entry) {
+    return wanted.indexOf(entry.path) >= 0;
+  });
+}
+
+/** 剪贴板里是否有可以粘贴的东西。 */
+export function hasClipboard() {
+  return Boolean(state.clipboard && state.clipboard.paths && state.clipboard.paths.length);
 }

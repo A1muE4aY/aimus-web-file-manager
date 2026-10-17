@@ -204,25 +204,63 @@ export function renameEntry(id, path, newName) {
   });
 }
 
-/** 响应形如 {"deleted": {...}}：removed 里有文件与目录的计数。 */
-export function deleteEntry(id, path, recursive) {
-  return request("POST", "/api/connections/" + qs(id) + "/delete", {
-    body: { path: path, recursive: Boolean(recursive) },
+/**
+ * 新建文件或文件夹（v0.1.3 §4）。
+ *
+ * 服务端用排他创建（O_EXCL 语义）落地：同名一律拒绝，不会静默覆盖。
+ * 这里不做「先查一次有没有」的预检 —— 那只会把并发问题藏起来。
+ */
+export function createEntry(id, directory, name, kind) {
+  return request("POST", "/api/connections/" + qs(id) + "/create", {
+    body: { path: directory, name: name, kind: kind },
   });
+}
+
+/** 批量复制到另一个目录。响应形如 {"copy": {...}}：copied / files / bytes / skipped。 */
+export function copyEntries(id, paths, into, overwrite) {
+  return request("POST", "/api/connections/" + qs(id) + "/copy", {
+    body: { paths: paths, to: into, overwrite: Boolean(overwrite) },
+  });
+}
+
+/** 批量移动（同一个连接内改名换目录）。响应形如 {"move": {...}}。 */
+export function moveEntries(id, paths, into) {
+  return request("POST", "/api/connections/" + qs(id) + "/move", {
+    body: { paths: paths, to: into },
+  });
+}
+
+/**
+ * 单条或批量共用的请求体。
+ *
+ * v0.1.3 起 delete / compress / extract 都接受 paths 数组走批量入口，单条时仍用
+ * path 走原来的实现 —— 两个形状的响应不一样（批量多一层汇总），调用方要分清楚。
+ */
+function entryPayload(pathOrPaths) {
+  return Array.isArray(pathOrPaths) ? { paths: pathOrPaths } : { path: pathOrPaths };
+}
+
+/** 响应形如 {"deleted": {...}}：removed 里有文件与目录的计数；批量时是数组 + 汇总。 */
+export function deleteEntry(id, pathOrPaths, recursive) {
+  const body = entryPayload(pathOrPaths);
+  body.recursive = Boolean(recursive);
+  return request("POST", "/api/connections/" + qs(id) + "/delete", { body: body });
 }
 
 /** 响应形如 {"archive": {...}}：entries / size / bytes / skipped 都在里面。 */
-export function compressEntry(id, path, name) {
-  return request("POST", "/api/connections/" + qs(id) + "/compress", {
-    body: { path: path, name: name || "" },
-  });
+export function compressEntry(id, pathOrPaths, name, into) {
+  const body = entryPayload(pathOrPaths);
+  body.name = name || "";
+  body.into = into || "";
+  return request("POST", "/api/connections/" + qs(id) + "/compress", { body: body });
 }
 
 /** 响应形如 {"extract": {...}}：files / directories / existing / skipped / stopped 都在里面。 */
-export function extractEntry(id, path, into, overwrite) {
-  return request("POST", "/api/connections/" + qs(id) + "/extract", {
-    body: { path: path, into: into || "", overwrite: Boolean(overwrite) },
-  });
+export function extractEntry(id, pathOrPaths, into, overwrite) {
+  const body = entryPayload(pathOrPaths);
+  body.into = into || "";
+  body.overwrite = Boolean(overwrite);
+  return request("POST", "/api/connections/" + qs(id) + "/extract", { body: body });
 }
 
 export function uploadCheck(id, directory, filename) {

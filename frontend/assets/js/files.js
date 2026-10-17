@@ -21,7 +21,17 @@ import {
 import { entryIcon } from "./icons.js";
 import { installContextMenu, showTooltip, hideTooltip, closeOverlays } from "./overlay.js";
 import { toast, toastOk, toastError, toastWarn } from "./toast.js";
-import { state, activeConnection, allowWrite, isConnected } from "./state.js";
+import {
+  state,
+  activeConnection,
+  allowWrite,
+  isConnected,
+  isChecked,
+  toggleChecked,
+  clearChecked,
+  setChecked,
+  checkedEntries,
+} from "./state.js";
 
 let deps = {
   onSelectionChange: function () {},
@@ -42,6 +52,21 @@ let deps = {
   },
   // 发现通道已经断了时调用，用来马上把连接卡片与工具栏刷成实际状态。
   onConnectionLost: function () {},
+  // v0.1.3：新建、复制/剪切/粘贴、批量动作、多选开关（都不由这一层实现，
+  // 界面这一层只负责「点了什么」，真正的请求在 fileops.js）。
+  onCreateFile: function () {},
+  onCreateFolder: function () {},
+  onCopy: function () {},
+  onCut: function () {},
+  onPaste: function () {},
+  onDeleteMany: function () {},
+  onCompressMany: function () {},
+  onExtractMany: function () {},
+  onMultiSelectChange: function () {},
+  // 等列表刷新完成（新建之后靠它区分「创建成功」与「创建成功但刷新失败」）。
+  refreshList: function () {
+    return Promise.resolve();
+  },
 };
 
 export function initFiles(hooks) {
@@ -49,6 +74,7 @@ export function initFiles(hooks) {
   bindSortHeaders();
   bindRetry();
   bindContextMenus();
+  bindSelectionBar();
 }
 
 /**
@@ -273,11 +299,16 @@ function renderTable() {
   // 重绘会把行整批换掉：挂在旧行上的菜单与提示必须先收掉（阶段二 2.5）。
   closeOverlays();
   clear(body);
+  // 多选列是否占宽度由这个类决定：重绘时按当前模式对一次，避免状态与画面脱节。
+  const table = $("#file-table");
+  if (table) table.classList.toggle("has-select", Boolean(state.multiSelect));
   const entries = sortEntries(state.entries);
   for (const entry of entries) body.appendChild(rowNode(entry));
+  syncCheckedRows();
   markTruncatedNames();
   renderListStatus();
   renderEmptyHint();
+  renderSelectionBar();
   $("#entry-count").textContent = countText();
 
   const headers = document.querySelectorAll("#file-table thead th[data-sort]");
@@ -361,9 +392,34 @@ function rowNode(entry) {
     "data-type": entry.type,
     "data-name": entry.name,
     "data-selected": selected ? "true" : "false",
+    "data-path": entry.path,
     title: entry.path,
   });
   if (entry.type === "directory") row.className = "is-dir";
+  if (state.clipboard && state.clipboard.mode === "cut" && state.clipboard.paths.indexOf(entry.path) >= 0) {
+    row.setAttribute("data-clipboard", "cut");
+  }
+
+  // 复选框列（v0.1.3 §4）：整列由表格上的 has-select 类控制显隐，所以关掉多选
+  // 时这一格还在 DOM 里，只是整列不占宽度 —— 切模式只改一个类，不用重绘。
+  const checkCell = h("td", { class: "col-select" });
+  const check = h("input", {
+    type: "checkbox",
+    class: "row-check",
+    "data-path": entry.path,
+    "aria-label": "选择「" + entry.name + "」",
+    checked: isChecked(entry.path),
+  });
+  check.addEventListener("click", function (event) {
+    event.stopPropagation();
+  });
+  check.addEventListener("change", function () {
+    toggleChecked(entry.path);
+    syncCheckedRows();
+    renderSelectionBar();
+  });
+  checkCell.appendChild(check);
+  row.appendChild(checkCell);
 
   const nameCell = h("td", { class: "col-name" });
   const wrap = h("div", { class: "name-cell" }, entryIcon(entry.type, entry.link_broken));
@@ -436,10 +492,22 @@ function rowNode(entry) {
 }
 
 /**
- * 「操作」列：把条目级动作放在行内。
+ * 行内动作的固定顺序（v0.1.3 §1：编辑 → 复制 → 剪切 → 重命名 → 删除 → 压缩 → 解压）。
  *
- * 两个细节都是刻意的：
- * - 写操作按钮在连接未开写权限时直接禁用：省一次注定被拒的往返。真正的把关在
+ * 这个数组是**唯一**的顺序来源：渲染、CSS 槽位数、单测都对着它。要调整顺序就改
+ * 这里，别去改 CSS —— 槽位是按「第几个按钮」排的。
+ */
+export const ACTION_ORDER = ["edit", "copy", "cut", "rename", "delete", "compress", "extract"];
+
+const WRITE_HINT = "需要先打开「允许写操作」";
+
+/**
+ * 「操作」列：把条目级动作放在行内的独立容器里。
+ *
+ * 三条纪律都是刻意的：
+ * - **七个槽位永远都在**（不适用的也只禁用、不隐藏）：隐藏会让后面的按钮往左
+ *   跳，「删除」在带压缩包的行与普通行上就落在不同位置了（v0.1.3 §1）。
+ * - 写操作在连接未开写权限时直接禁用：省一次注定被拒的往返。真正的把关在
  *   服务端 —— 每个写入口都会重新检查 allow_write，界面禁用只是提示。
  * - 每个按钮都 stopPropagation：否则点按钮会先触发整行的选中，删除这种动作
  *   会连带把选中项换掉，让人以为自己删的是别的条目。
@@ -447,32 +515,85 @@ function rowNode(entry) {
 function actionCell(entry) {
   const conn = activeConnection();
   const writable = Boolean(conn && allowWrite(conn.id));
-  const box = h("div", { class: "row-actions" });
-  // 五个动作用五个固定槽位：按钮由 CSS 按动作钉在自己的列上（grid-column），
-  // 于是「重命名」在任何一行、任何文件类型下都落在同一个横坐标，行与行之间
-  // 不会因为少了「编辑」或多出「解压」而错位（v0.1.2 阶段二 2.2）。
-  const actions = [];
-  if (entry.type === "file") {
-    actions.push({ key: "edit", label: "编辑", cls: "btn-edit-entry", enabled: true, run: function () { deps.onEdit(entry); } });
-  }
-  if (entry.type === "file" && isArchiveName(entry.name)) {
-    actions.push({ key: "extract", label: "解压", cls: "btn-extract-entry", enabled: writable, run: function () { deps.onExtract(entry); } });
-  }
-  actions.push({ key: "rename", label: "重命名", cls: "btn-rename-entry", enabled: writable, run: function () { deps.onRename(entry); } });
-  actions.push({ key: "compress", label: "压缩", cls: "btn-compress-entry", enabled: writable, run: function () { deps.onCompress(entry); } });
-  actions.push({ key: "delete", label: "删除", cls: "btn-delete-entry", enabled: writable, run: function () { deps.onDelete(entry); } });
-  for (const action of actions) {
+  const connected = Boolean(conn && isConnected(conn.id));
+  const isFile = entry.type === "file";
+  const isDir = entry.type === "directory";
+  const archive = isFile && isArchiveName(entry.name);
+
+  // 每个槽位：能不能点、点不了的时候为什么（title 必须说出原因，只灰掉等于没说）。
+  const slots = {
+    edit: {
+      label: "编辑",
+      enabled: connected && isFile,
+      reason: connected ? (isDir ? "目录不能编辑。" : "符号链接不能直接编辑。") : "连接已经断开。",
+      run: function () {
+        deps.onEdit(entry);
+      },
+    },
+    copy: {
+      label: "复制",
+      enabled: connected,
+      reason: "连接已经断开。",
+      run: function () {
+        deps.onCopy([entry]);
+      },
+    },
+    cut: {
+      label: "剪切",
+      enabled: connected && writable,
+      reason: connected ? WRITE_HINT : "连接已经断开。",
+      run: function () {
+        deps.onCut([entry]);
+      },
+    },
+    rename: {
+      label: "重命名",
+      enabled: connected && writable,
+      reason: connected ? WRITE_HINT : "连接已经断开。",
+      run: function () {
+        deps.onRename(entry);
+      },
+    },
+    delete: {
+      label: "删除",
+      enabled: connected && writable,
+      reason: connected ? WRITE_HINT : "连接已经断开。",
+      run: function () {
+        deps.onDelete(entry);
+      },
+    },
+    compress: {
+      label: "压缩",
+      enabled: connected && writable,
+      reason: connected ? WRITE_HINT : "连接已经断开。",
+      run: function () {
+        deps.onCompress(entry);
+      },
+    },
+    extract: {
+      label: "解压",
+      enabled: connected && writable && archive,
+      reason: connected ? (archive ? WRITE_HINT : "只有压缩包才能解压。") : "连接已经断开。",
+      run: function () {
+        deps.onExtract(entry);
+      },
+    },
+  };
+
+  const box = h("div", { class: "file-actions-box" });
+  for (const key of ACTION_ORDER) {
+    const slot = slots[key];
     box.appendChild(
       h("button", {
         type: "button",
-        class: "btn btn-small " + action.cls,
-        "data-action": action.key,
-        text: action.label,
-        disabled: !action.enabled,
-        title: action.enabled ? action.label : "需要先打开「允许写操作」",
+        class: "btn btn-small btn-" + key + "-entry",
+        "data-action": key,
+        text: slot.label,
+        disabled: !slot.enabled,
+        title: slot.enabled ? slot.label : slot.reason,
         onClick: function (event) {
           event.stopPropagation();
-          action.run();
+          slot.run();
         },
       })
     );
@@ -498,6 +619,115 @@ function markTruncatedNames() {
       node.removeAttribute("tabindex");
     }
   }
+}
+
+/**
+ * 多选模式开关（v0.1.3 §4）。
+ *
+ * 切模式只改表格上的一个类：复选框那一列本来就在 DOM 里，靠 `has-select` 决定
+ * 占不占宽度。这样关掉多选时列表不用重绘，滚动位置和已展开的提示都不会跳。
+ */
+export function setMultiSelect(on) {
+  const next = Boolean(on);
+  if (state.multiSelect === next) return;
+  state.multiSelect = next;
+  const table = $("#file-table");
+  if (table) table.classList.toggle("has-select", next);
+  clearChecked();
+  syncCheckedRows();
+  renderSelectionBar();
+  deps.onMultiSelectChange(next);
+}
+
+export function toggleMultiSelect() {
+  setMultiSelect(!state.multiSelect);
+}
+
+/** 全选 / 取消全选：只针对当前列表里真实存在的条目。 */
+export function selectAllChecked() {
+  const entries = state.entries || [];
+  const all = entries.length > 0 && checkedEntries().length === entries.length;
+  if (all) clearChecked();
+  else setChecked(entries.map(function (entry) { return entry.path; }));
+  syncCheckedRows();
+  renderSelectionBar();
+}
+
+/** 把 state.checked 回写到每一行的复选框上（渲染后、勾选后都要对齐）。 */
+function syncCheckedRows() {
+  for (const row of document.querySelectorAll("#file-body tr[data-path]")) {
+    const box = row.querySelector(".row-check");
+    if (box) box.checked = isChecked(row.getAttribute("data-path"));
+  }
+  const all = $("#chk-select-all");
+  if (all) {
+    const entries = state.entries || [];
+    const picked = checkedEntries().length;
+    all.checked = entries.length > 0 && picked === entries.length;
+    all.indeterminate = picked > 0 && picked < entries.length;
+    all.disabled = entries.length === 0;
+  }
+}
+
+/**
+ * 底部多选操作条：显示「已选 N 项」并决定各按钮能不能点。
+ *
+ * 这里刻意不让「选中项里的压缩包数量」影响复制/删除：只有解压是逐条语义，
+ * 混着普通文件时禁用并说明原因，比让用户点下去再收到一半失败的通知好。
+ */
+export function renderSelectionBar() {
+  const bar = $("#sel-bar");
+  if (!bar) return;
+  bar.hidden = !state.multiSelect;
+  const conn = activeConnection();
+  const connected = Boolean(conn && isConnected(conn.id));
+  const writable = Boolean(conn && allowWrite(conn.id));
+  const picks = checkedEntries();
+  const archives = picks.filter(function (entry) { return entry.type === "file" && isArchiveName(entry.name); });
+  const count = $("#sel-count");
+  if (count) {
+    if (!state.multiSelect) count.textContent = "";
+    else if (picks.length === 0) count.textContent = "已选 0 项：勾选行最左侧的复选框，或点「全选」。";
+    else count.textContent = "已选 " + picks.length + " 项。";
+  }
+  const has = picks.length > 0;
+  const set = function (id, enabled, title) {
+    const node = $(id);
+    if (!node) return;
+    node.disabled = !enabled;
+    if (title) node.title = title;
+    else node.removeAttribute("title");
+  };
+  const needWrite = connected ? WRITE_HINT : "连接已经断开。";
+  const needConnect = "连接已经断开。";
+  set("#btn-sel-all", connected, connected ? (has && picks.length === (state.entries || []).length ? "取消全选" : "选中当前列表里的所有条目") : needConnect);
+  set("#btn-sel-copy", connected && has, connected ? "复制选中的条目" : needConnect);
+  set("#btn-sel-cut", connected && writable && has, needWrite);
+  set("#btn-sel-delete", connected && writable && has, needWrite);
+  set("#btn-sel-compress", connected && writable && has, needWrite);
+  set("#btn-sel-extract", connected && writable && archives.length > 0, connected ? (archives.length > 0 ? (writable ? "解压选中的压缩包" : WRITE_HINT) : "选中的条目里没有压缩包。") : needConnect);
+  set("#btn-sel-clear", has, has ? "取消所有勾选" : "还没有勾选任何条目");
+}
+
+/** 多选操作条的按钮只做分发：真正的对话框与请求都在 fileops.js。 */
+function bindSelectionBar() {
+  const bind = function (id, run) {
+    const node = $(id);
+    if (node) node.addEventListener("click", run);
+  };
+  bind("#btn-sel-all", function () { selectAllChecked(); });
+  bind("#btn-sel-clear", function () {
+    clearChecked();
+    syncCheckedRows();
+    renderSelectionBar();
+  });
+  bind("#btn-sel-copy", function () { deps.onCopy(checkedEntries()); });
+  bind("#btn-sel-cut", function () { deps.onCut(checkedEntries()); });
+  bind("#btn-sel-delete", function () { deps.onDeleteMany(checkedEntries()); });
+  bind("#btn-sel-compress", function () { deps.onCompressMany(checkedEntries()); });
+  bind("#btn-sel-extract", function () { deps.onExtractMany(checkedEntries()); });
+  const all = $("#chk-select-all");
+  if (all) all.addEventListener("change", function () { selectAllChecked(); });
 }
 
 /** 复制名称 / 复制路径：成功失败都要给反馈，不能默默什么都不发生。 */
@@ -592,6 +822,13 @@ function containerMenuItems() {
 
 function select(entry) {
   state.selected = entry;
+  // 多选模式下，点行本身也是勾选/取消勾选：整行都是可点区域，不必非去点那个
+  // 小方框。复选框自己的 click 已经 stopPropagation，不会进来两次。
+  if (state.multiSelect) {
+    toggleChecked(entry.path);
+    syncCheckedRows();
+    renderSelectionBar();
+  }
   const body = $("#file-body");
   for (const row of body.children) {
     row.setAttribute("data-selected", row.getAttribute("data-name") === entry.name ? "true" : "false");
@@ -682,6 +919,9 @@ export function resetView() {
   state.listStatus = "idle";
   state.listError = null;
   state.pendingPath = null;
+  // 换连接时勾选项必须一起清：路径只在那一条连接里成立，留着会误删同名文件。
+  clearChecked();
+  state.multiSelect = false;
   setNotice(null);
   render();
   deps.onSelectionChange(null);

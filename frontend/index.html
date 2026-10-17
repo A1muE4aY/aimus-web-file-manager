@@ -74,10 +74,18 @@
               <input type="checkbox" id="chk-allow-write">
               <span>允许写操作</span>
             </label>
+            <button type="button" class="btn" id="btn-new-file" disabled
+                    title="在当前目录里新建一个空文件">新建文件</button>
+            <button type="button" class="btn" id="btn-new-folder" disabled
+                    title="在当前目录里新建一个文件夹">新建文件夹</button>
+            <button type="button" class="btn" id="btn-paste" disabled
+                    title="把复制或剪切的条目粘贴到当前目录">粘贴</button>
             <button type="button" class="btn" id="btn-edit" disabled>编辑</button>
             <button type="button" class="btn" id="btn-preview" disabled>预览</button>
             <button type="button" class="btn" id="btn-download" disabled>下载</button>
             <button type="button" class="btn" id="btn-upload" disabled>上传</button>
+            <button type="button" class="btn" id="btn-select-mode" disabled
+                    aria-pressed="false" title="在多选模式里给每一行显示复选框">多选</button>
             <input type="file" id="file-input" multiple hidden>
           </div>
         </div>
@@ -120,14 +128,39 @@
 
         <div class="notice" id="notice" hidden></div>
 
+        <div class="sel-bar" id="sel-bar" hidden>
+          <span class="sel-count" id="sel-count"></span>
+          <span class="sel-actions">
+            <button type="button" class="btn btn-small" id="btn-sel-all">全选</button>
+            <button type="button" class="btn btn-small" id="btn-sel-copy">复制</button>
+            <button type="button" class="btn btn-small" id="btn-sel-cut">剪切</button>
+            <button type="button" class="btn btn-small" id="btn-sel-delete">删除</button>
+            <button type="button" class="btn btn-small" id="btn-sel-compress">压缩</button>
+            <button type="button" class="btn btn-small" id="btn-sel-extract">解压</button>
+            <button type="button" class="btn btn-small" id="btn-sel-clear">清空</button>
+          </span>
+        </div>
+
         <div class="table-wrap">
           <div class="list-stale" id="list-stale" hidden>
             <span id="list-stale-text"></span>
             <button type="button" class="btn btn-small" id="btn-retry-list">重试</button>
           </div>
           <table class="file-table" id="file-table">
+            <colgroup>
+              <col class="col-select">
+              <col class="col-name">
+              <col class="col-size">
+              <col class="col-type">
+              <col class="col-perm">
+              <col class="col-time">
+              <col class="col-action">
+            </colgroup>
             <thead>
               <tr>
+                <th class="col-select" scope="col">
+                  <input type="checkbox" id="chk-select-all" aria-label="全选" disabled>
+                </th>
                 <th class="col-name" data-sort="name" scope="col">名称</th>
                 <th class="col-size" data-sort="size" scope="col">大小</th>
                 <th class="col-type" data-sort="type" scope="col">类型</th>

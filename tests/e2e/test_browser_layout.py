@@ -56,8 +56,10 @@ FIXTURE_ROOT = HOME_DIR + "/" + FIXTURE_DIR
 MODAL_OPEN = "!document.getElementById('modal-root').hidden"
 MODAL_CLOSED = "document.getElementById('modal-root').hidden === true"
 
-#: 「操作」列在宽窗下的五个固定槽位：CSS 按动作把它们钉在 grid-column 1..5。
-WIDE_SLOTS = ("edit", "extract", "rename", "compress", "delete")
+#: 「操作」列固定七个槽位（v0.1.3 §1），顺序即 DOM 顺序：
+#: 编辑→复制→剪切→重命名→删除→压缩→解压。不适用的动作仍然渲染成 disabled 按钮，
+#: 所以每一行的七个槽位都在，位置不会因为文件类型不同而跳动。
+WIDE_SLOTS = ("edit", "copy", "cut", "rename", "delete", "compress", "extract")
 
 #: 右键菜单应有的项目（顺序即渲染顺序）。
 PLAIN_FILE_MENU = ["预览", "编辑", "下载", "重命名", "压缩成 .tar.gz", "删除", "复制名称", "复制完整路径"]
@@ -181,14 +183,15 @@ def click_dialog_button_expr(text: str) -> str:
     )
 
 
-#: 行内五个按钮的实际位置：同一个动作在所有行上必须落同一个数。
+#: 行内七个按钮的实际位置：同一个动作在所有行上必须落同一个数。
+#: disabled 一起采集：不适用 ≠ 不存在，v0.1.3 起它们必须占着原来的格子。
 SLOT_METRICS = (
     "(function () {"
     "  var out = [];"
     "  var rows = document.querySelectorAll('#file-body tr[data-name]');"
     "  for (var i = 0; i < rows.length; i++) {"
     "    var row = rows[i];"
-    "    var box = row.querySelector('.row-actions');"
+    "    var box = row.querySelector('.file-actions-box');"
     "    if (!box) { continue; }"
     "    var actions = {};"
     "    var buttons = box.querySelectorAll('button[data-action]');"
@@ -196,7 +199,9 @@ SLOT_METRICS = (
     "      var r = buttons[j].getBoundingClientRect();"
     "      actions[buttons[j].getAttribute('data-action')] = {"
     "        left: Math.round(r.left), right: Math.round(r.right),"
-    "        top: Math.round(r.top), width: Math.round(r.width) };"
+    "        top: Math.round(r.top), height: Math.round(r.height),"
+    "        width: Math.round(r.width), disabled: buttons[j].disabled === true,"
+    "        text: (buttons[j].textContent || '').trim() };"
     "    }"
     "    var nameRect = row.querySelector('.entry-name').getBoundingClientRect();"
     "    var boxRect = box.getBoundingClientRect();"
@@ -450,6 +455,25 @@ class BrowserLayoutTests(unittest.TestCase):
                              LAYOUT_ZERO, LAYOUT_OLD, *LAYOUT_PERMS):
                 self.assertIn(expected, names, "夹具行没有渲染出来：" + expected)
 
+            labels = {
+                "edit": "编辑", "copy": "复制", "cut": "剪切", "rename": "重命名",
+                "delete": "删除", "compress": "压缩", "extract": "解压",
+            }
+            # 每一行都必须是完整的七个槽位：不适用的动作禁用，但绝不消失 ——
+            # 一消失，后面的按钮就往左跳，同屏里「删除」就会落在两个位置。
+            for row in slots:
+                self.assertEqual(
+                    list(row["actions"].keys()),
+                    list(WIDE_SLOTS),
+                    "%s 的按钮顺序/数量不对：%r" % (row["name"], list(row["actions"].keys())),
+                )
+                for action in WIDE_SLOTS:
+                    self.assertEqual(
+                        row["actions"][action]["text"],
+                        labels[action],
+                        "%s 的「%s」槽位文字不对" % (row["name"], action),
+                    )
+
             for action in WIDE_SLOTS:
                 rows = [row for row in slots if action in row["actions"]]
                 self.assertTrue(rows, "没有任何一行带「%s」按钮" % action)
@@ -461,13 +485,35 @@ class BrowserLayoutTests(unittest.TestCase):
                 )
                 widths = sorted({row["actions"][action]["width"] for row in rows})
                 self.assertEqual(len(widths), 1, "「%s」按钮宽度不一致：%r" % (action, widths))
+                heights = sorted({row["actions"][action]["height"] for row in rows})
+                self.assertEqual(len(heights), 1, "「%s」按钮高度不一致：%r" % (action, heights))
 
-            # 目录行没有「编辑」、压缩包行多了「解压」—— 但重命名/压缩/删除仍在原处。
+            # 七个槽位排在同一行：同一条记录里，七个按钮的纵向位置必须一致
+            # （跨记录比 top 没有意义，每条记录本来就在不同的行上）。
+            for row in slots:
+                row_tops = sorted({row["actions"][action]["top"] for action in WIDE_SLOTS})
+                self.assertEqual(
+                    len(row_tops), 1, "%s 的七个按钮不在同一行：%r" % (row["name"], row_tops)
+                )
+
+            # 不适用 ≠ 不存在：目录/符号链接的「编辑」、普通文件的「解压」都在，只是禁用。
             by_name = {row["name"]: row for row in slots}
-            self.assertNotIn("edit", by_name[LAYOUT_LONG_DIR]["actions"], "目录行不该有「编辑」")
-            self.assertNotIn("edit", by_name[LAYOUT_LINK]["actions"], "符号链接行不该有「编辑」")
-            self.assertIn("extract", by_name[LAYOUT_ARCHIVE]["actions"], "压缩包行该有「解压」")
-            self.assertNotIn("extract", by_name[LAYOUT_SHORT]["actions"], "普通文件不该有「解压」")
+            self.assertTrue(
+                by_name[LAYOUT_LONG_DIR]["actions"]["edit"]["disabled"], "目录行的「编辑」应当禁用"
+            )
+            self.assertTrue(
+                by_name[LAYOUT_LINK]["actions"]["edit"]["disabled"], "符号链接行的「编辑」应当禁用"
+            )
+            self.assertFalse(
+                by_name[LAYOUT_SHORT]["actions"]["edit"]["disabled"], "普通文件的「编辑」应当可点"
+            )
+            self.assertTrue(
+                by_name[LAYOUT_SHORT]["actions"]["extract"]["disabled"], "普通文件的「解压」应当禁用"
+            )
+            self.assertFalse(
+                by_name[LAYOUT_ARCHIVE]["actions"]["extract"]["disabled"],
+                "压缩包行的「解压」应当可点",
+            )
             for other in (LAYOUT_LONG_DIR, LAYOUT_LINK, LAYOUT_ARCHIVE, LAYOUT_BIG):
                 self.assertEqual(
                     by_name[other]["actions"]["rename"]["left"],
@@ -475,10 +521,10 @@ class BrowserLayoutTests(unittest.TestCase):
                     "「重命名」在 %s 与普通文件上不在同一格" % other,
                 )
 
-            # 宽窗下五个动作按设计顺序排开（edit < extract < rename < compress < delete）。
+            # 宽窗下七个动作按设计顺序排开（编辑→复制→剪切→重命名→删除→压缩→解压）。
             archive = by_name[LAYOUT_ARCHIVE]["actions"]
             order = [archive[key]["left"] for key in WIDE_SLOTS]
-            self.assertEqual(order, sorted(order), "五个槽位的左右顺序不对：%r" % order)
+            self.assertEqual(order, sorted(order), "七个槽位的左右顺序不对：%r" % order)
 
             # 按钮不许压住名字列：每一行名字的右边界都要在按钮组左边之内。
             for row in slots:
@@ -884,37 +930,33 @@ class BrowserLayoutTests(unittest.TestCase):
                 "none",
                 "窄窗下类型列没有收起来",
             )
+            self.assertEqual(
+                page.evaluate(
+                    "(function () {"
+                    "  var th = document.querySelector('#file-table thead th.col-time');"
+                    "  return th ? getComputedStyle(th).display : 'missing';"
+                    "})()"
+                ),
+                "none",
+                "窄窗下修改时间列没有收起来",
+            )
             slots = page.evaluate(SLOT_METRICS)
-            for action in ("edit", "rename", "compress", "delete"):
+            # 992 CSS 宽只收起三列（权限/类型/修改时间），七个槽位仍然一行放得下：
+            # 折行会改变行高，同屏里就能看出「有的行高一点」。
+            for action in WIDE_SLOTS:
                 rows = [row for row in slots if action in row["actions"]]
                 lefts = sorted({row["actions"][action]["left"] for row in rows})
                 self.assertEqual(len(lefts), 1, "窄窗下「%s」横坐标不一致：%r" % (action, lefts))
-            # 两行槽位：编辑/重命名在上、压缩/删除在下，左右各自对齐。
             for row in slots:
-                actions = row["actions"]
-                if "rename" in actions and "delete" in actions:
-                    self.assertGreater(
-                        actions["delete"]["top"],
-                        actions["rename"]["top"],
-                        "窄窗下删除没有折到第二行：" + row["name"],
-                    )
-                    self.assertEqual(
-                        actions["delete"]["top"],
-                        actions["compress"]["top"],
-                        "窄窗下第二行的两个按钮不在同一行：" + row["name"],
-                    )
-                    if "edit" in actions:
-                        self.assertEqual(
-                            actions["compress"]["left"],
-                            actions["edit"]["left"],
-                            "窄窗下「压缩」没有落在「编辑」下面：" + row["name"],
-                        )
-                    if "extract" in actions:
-                        self.assertEqual(
-                            actions["delete"]["left"],
-                            actions["extract"]["left"],
-                            "窄窗下「删除」没有落在「解压」下面：" + row["name"],
-                        )
+                row_tops = sorted({row["actions"][action]["top"] for action in WIDE_SLOTS})
+                self.assertEqual(
+                    len(row_tops), 1, "窄窗下 %s 的七个按钮不在同一行：%r" % (row["name"], row_tops)
+                )
+                self.assertEqual(
+                    list(row["actions"].keys()),
+                    list(WIDE_SLOTS),
+                    "窄窗下 %s 的槽位不全：%r" % (row["name"], list(row["actions"].keys())),
+                )
                 self.assertLessEqual(
                     row["actionsRight"],
                     page.evaluate("window.innerWidth"),
@@ -947,24 +989,48 @@ class BrowserLayoutTests(unittest.TestCase):
             )
             self.assertEqual(
                 page.evaluate(
-                    "getComputedStyle(document.querySelector('#file-table thead th.col-size')).width"
+                    "(function () {"
+                    "  var th = document.querySelector('#file-table thead th.col-size');"
+                    "  return th ? getComputedStyle(th).display : 'missing';"
+                    "})()"
                 ),
-                "64px",
-                "150% 缩放下大小列没有收窄",
+                "none",
+                "150% 缩放下大小列没有收起来",
             )
             name_width = page.evaluate(
                 "document.querySelector('#file-body .col-name').getBoundingClientRect().width"
             )
-            size_width = page.evaluate(
-                "document.querySelector('#file-body .col-size').getBoundingClientRect().width"
-            )
-            # 661 CSS 视口下名字列实测约 104px（图标 + 约 8 个字符）——要求的是
-            # 「还读得出开头、仍是数据列里最宽的一列」，而不是一个凭感觉定的像素值。
+            # 661 CSS 视口下表格只剩「名称 / 操作」两列，名字列仍要够读出开头几个字
+            # （实测约 110px = 图标 + 约 8 个字符），而不是被压缩到看不见。
             self.assertGreaterEqual(name_width, 88, "150%% 缩放下名字列被压得只剩 %r" % name_width)
-            self.assertGreater(
-                name_width, size_width, "150%% 缩放下名字列没比大小列宽：%r" % name_width
-            )
-            for row in page.evaluate(SLOT_METRICS):
+
+            # 七个槽位这时折成 4 + 3 两行，块级网格里每一行仍是固定槽位：
+            # 同一个动作在所有行上落同样的 (left, top)，第二行与第一行逐列对齐。
+            zoom_slots = page.evaluate(SLOT_METRICS)
+            for action in WIDE_SLOTS:
+                lefts = sorted({row["actions"][action]["left"] for row in zoom_slots})
+                self.assertEqual(len(lefts), 1, "150%% 缩放下「%s」横坐标不一致：%r" % (action, lefts))
+                # 行的绝对纵向位置随记录变化，能比的是「相对本行第一格偏了多少」。
+                offsets = sorted({
+                    row["actions"][action]["top"] - row["actions"]["edit"]["top"]
+                    for row in zoom_slots
+                })
+                self.assertEqual(
+                    len(offsets),
+                    1,
+                    "150%% 缩放下「%s」相对行首的纵向偏移不一致：%r" % (action, offsets),
+                )
+            for row in zoom_slots:
+                acts = row["actions"]
+                row_tops = sorted({acts[key]["top"] for key in WIDE_SLOTS})
+                self.assertEqual(
+                    len(row_tops), 2, "150%% 缩放下 %s 的槽位没有折成两行：%r" % (row["name"], row_tops)
+                )
+                # 7 个槽位按顺序填满 4 列：第二行从「删除」起，逐格与第一行对齐。
+                self.assertEqual(acts["delete"]["left"], acts["edit"]["left"], "第二行第一格没对齐")
+                self.assertEqual(acts["compress"]["left"], acts["copy"]["left"], "第二行第二格没对齐")
+                self.assertEqual(acts["extract"]["left"], acts["cut"]["left"], "第二行第三格没对齐")
+            for row in zoom_slots:
                 self.assertLessEqual(
                     row["actionsRight"],
                     page.evaluate("window.innerWidth"),
