@@ -16,10 +16,12 @@ from app.core.errors import (
     NotConnected,
     PathNotFound,
     PermissionDenied,
+    RemoteError,
     Unauthorized,
     ValidationError,
 )
 from app.services import fileops
+from app.ssh import sftp_protocol as proto
 from tests.unit.fake_sftp import FakeSFTPClient
 
 HOME = "/home/aimu"
@@ -171,6 +173,97 @@ class RenameTests(FileOpsTestCase):
         self.client.offline = True
         error = self.failure(NotConnected, fileops.rename_entry, self.session, A_TXT, "b.txt")
         self.assertEqual(error.code, "not_connected")
+
+
+class CreateTests(FileOpsTestCase):
+    def test_creates_an_empty_file(self):
+        result = fileops.create_entry(self.session, HOME, "new.txt", kind="file")
+        self.assertEqual(result["path"], HOME + "/new.txt")
+        self.assertEqual(result["name"], "new.txt")
+        self.assertEqual(result["kind"], "file")
+        self.assertEqual(result["type"], "file")
+        self.assertEqual(result["size"], 0)
+        self.assertTrue(self.client.exists(HOME + "/new.txt"))
+        self.assertEqual(self.client.read(HOME + "/new.txt"), b"")
+        self.assertEqual(self.client.stat(HOME + "/new.txt").permissions & 0o777, 0o644)
+
+    def test_creates_a_directory(self):
+        result = fileops.create_entry(self.session, HOME, "docs", kind="directory")
+        self.assertEqual(result["type"], "directory")
+        self.assertEqual(result["size"], 0)
+        self.assertEqual(self.client.stat(HOME + "/docs").permissions & 0o777, 0o755)
+        # 目录里能继续放东西，说明它真的是目录而不是文件
+        fileops.create_entry(self.session, HOME + "/docs", "inner.txt", kind="file")
+        self.assertTrue(self.client.exists(HOME + "/docs/inner.txt"))
+
+    def test_creation_uses_an_exclusive_open(self):
+        fileops.create_entry(self.session, HOME, "new.txt", kind="file")
+        opens = [entry for entry in self.client.log if entry[0] == "open"]
+        self.assertEqual(len(opens), 1)
+        _name, _path, pflags = opens[0]
+        self.assertTrue(pflags & proto.SSH_FXF_EXCL)
+        self.assertFalse(pflags & proto.SSH_FXF_TRUNC)
+
+    def test_an_existing_name_is_refused_and_left_untouched(self):
+        self.put("new.txt", "keep me\n")
+        error = self.failure(
+            ValidationError, fileops.create_entry, self.session, HOME, "new.txt", kind="file"
+        )
+        self.assertEqual(error.code, "invalid_request")
+        self.assertEqual(error.extra["path"], HOME + "/new.txt")
+        self.assertTrue(error.extra["exists"])
+        self.assertEqual(self.client.text(HOME + "/new.txt"), "keep me\n")
+
+    def test_a_concurrent_create_is_reported_as_already_existing(self):
+        def racing_open(path, pflags, mode=0o644):
+            self.client.add_file(path, b"someone else")
+            return FakeSFTPClient.open(self.client, path, pflags, mode)
+
+        with mock.patch.object(self.client, "open", racing_open):
+            error = self.failure(
+                ValidationError, fileops.create_entry, self.session, HOME, "new.txt", kind="file"
+            )
+        self.assertTrue(error.extra["exists"])
+        self.assertEqual(error.message, "同名条目已经存在。")
+        self.assertEqual(self.client.text(HOME + "/new.txt"), "someone else")
+
+    def test_invalid_names_are_refused(self):
+        for name in ("", "..", ".", "a/b", "a\x00b", "x" * 300):
+            with self.subTest(name=name):
+                self.failure(
+                    ValidationError, fileops.create_entry, self.session, HOME, name, kind="file"
+                )
+        self.assertFalse(self.client.exists(HOME + "/a/b"))
+
+    def test_unknown_kind_is_refused(self):
+        self.failure(
+            ValidationError, fileops.create_entry, self.session, HOME, "x", kind="symlink"
+        )
+
+    def test_the_directory_must_exist(self):
+        self.failure(
+            PathNotFound, fileops.create_entry, self.session, HOME + "/no/such", "x", kind="file"
+        )
+
+    def test_a_file_cannot_be_the_parent_directory(self):
+        self.put("a.txt", "x")
+        self.failure(
+            ValidationError, fileops.create_entry, self.session, A_TXT, "x", kind="file"
+        )
+
+    def test_write_permission_is_required(self):
+        readonly = make_session(self.client, allow_write=False)
+        error = self.failure(
+            Unauthorized, fileops.create_entry, readonly, HOME, "new.txt", kind="file"
+        )
+        self.assertEqual(error.code, "unauthorized")
+        self.assertFalse(self.client.exists(HOME + "/new.txt"))
+
+    def test_disconnected_session_cannot_create(self):
+        self.client.offline = True
+        self.failure(NotConnected, fileops.create_entry, self.session, HOME, "new.txt", kind="file")
+        self.client.offline = False
+        self.assertFalse(self.client.exists(HOME + "/new.txt"))
 
 
 class DeleteTests(FileOpsTestCase):
@@ -568,6 +661,247 @@ class ExtractTests(FileOpsTestCase):
         self.client.offline = True
         error = self.failure(NotConnected, fileops.extract_entry, self.session, path)
         self.assertEqual(error.code, "not_connected")
+
+
+class CopyTests(FileOpsTestCase):
+    def test_copies_a_file_into_another_directory(self):
+        self.put("a.txt", "hello\n")
+        self.client.add_dir(HOME + "/out")
+        result = fileops.copy_entries(self.session, [A_TXT], HOME + "/out")
+        self.assertEqual(result["destination"], HOME + "/out")
+        self.assertEqual(
+            result["copied"],
+            [{"source": A_TXT, "path": HOME + "/out/a.txt", "name": "a.txt"}],
+        )
+        self.assertEqual(result["files"], 1)
+        self.assertEqual(result["directories"], 0)
+        self.assertEqual(result["bytes"], 6)
+        self.assertEqual(result["skipped"], [])
+        self.assertFalse(result["overwrite"])
+        self.assertEqual(self.client.text(HOME + "/out/a.txt"), "hello\n")
+        # 复制不是移动：源文件必须还在，字节一字不差
+        self.assertEqual(self.client.text(A_TXT), "hello\n")
+
+    def test_copies_a_tree_with_its_permissions(self):
+        self.client.add_dir(HOME + "/d", mode=0o750)
+        self.put("d/x.txt", "x", mode=0o600)
+        self.client.add_dir(HOME + "/d/sub")
+        self.put("d/sub/y.txt", "yy")
+        self.client.add_dir(HOME + "/out")
+        result = fileops.copy_entries(self.session, [HOME + "/d"], HOME + "/out")
+        self.assertEqual(result["files"], 2)
+        self.assertEqual(result["directories"], 2)
+        self.assertEqual(result["bytes"], 3)
+        self.assertTrue(self.client.exists(HOME + "/out/d/sub/y.txt"))
+        self.assertEqual(self.client.text(HOME + "/out/d/x.txt"), "x")
+        self.assertEqual(self.client.stat(HOME + "/out/d").permissions & 0o777, 0o750)
+        self.assertEqual(self.client.stat(HOME + "/out/d/x.txt").permissions & 0o777, 0o600)
+
+    def test_an_existing_name_is_refused_and_the_target_keeps_its_bytes(self):
+        self.put("a.txt", "new\n")
+        self.client.add_dir(HOME + "/out")
+        self.put("out/a.txt", "old\n")
+        error = self.failure(ValidationError, fileops.copy_entries, self.session, [A_TXT], HOME + "/out")
+        self.assertEqual(error.code, "invalid_request")
+        self.assertEqual(error.extra["conflicts"][0]["target"], HOME + "/out/a.txt")
+        self.assertEqual(error.extra["conflicts"][0]["type"], "file")
+        self.assertEqual(self.client.text(HOME + "/out/a.txt"), "old\n")
+        self.assertEqual(self.client.text(A_TXT), "new\n")
+
+    def test_overwrite_replaces_the_target(self):
+        self.put("a.txt", "new\n")
+        self.client.add_dir(HOME + "/out")
+        self.put("out/a.txt", "old\n")
+        result = fileops.copy_entries(self.session, [A_TXT], HOME + "/out", overwrite=True)
+        self.assertTrue(result["overwrite"])
+        self.assertEqual(self.client.text(HOME + "/out/a.txt"), "new\n")
+
+    def test_copying_a_directory_into_itself_is_refused(self):
+        self.client.add_dir(HOME + "/d")
+        self.client.add_dir(HOME + "/d/sub")
+        error = self.failure(
+            ValidationError, fileops.copy_entries, self.session, [HOME + "/d"], HOME + "/d/sub"
+        )
+        self.assertEqual(error.message, "不能把目录复制到它自己里面。")
+
+    def test_copying_onto_the_same_directory_is_refused(self):
+        self.put("a.txt", "x")
+        error = self.failure(ValidationError, fileops.copy_entries, self.session, [A_TXT], HOME)
+        self.assertEqual(error.message, "源和目标在同一个位置，不需要复制。")
+
+    def test_symlinks_are_skipped_and_reported(self):
+        self.client.add_dir(HOME + "/d")
+        self.put("d/x.txt", "x")
+        self.client.add_link(HOME + "/d/link.txt", HOME + "/d/x.txt")
+        self.client.add_dir(HOME + "/out")
+        result = fileops.copy_entries(self.session, [HOME + "/d"], HOME + "/out")
+        self.assertEqual(result["files"], 1)
+        self.assertEqual(len(result["skipped"]), 1)
+        self.assertEqual(result["skipped"][0]["code"], "symlink_skipped")
+        self.assertEqual(result["skipped"][0]["name"], "link.txt")
+        # 不能悄悄建一个空文件冒充链接
+        self.assertFalse(self.client.exists(HOME + "/out/d/link.txt"))
+
+    def test_the_destination_must_be_a_directory(self):
+        self.put("a.txt", "x")
+        error = self.failure(ValidationError, fileops.copy_entries, self.session, [A_TXT], HOME + "/a.txt")
+        self.assertEqual(error.code, "invalid_request")
+
+    def test_missing_source_is_not_found(self):
+        self.client.add_dir(HOME + "/out")
+        self.failure(PathNotFound, fileops.copy_entries, self.session, [HOME + "/nope"], HOME + "/out")
+
+    def test_write_permission_is_required(self):
+        self.put("a.txt", "x")
+        self.client.add_dir(HOME + "/out")
+        readonly = make_session(self.client, allow_write=False)
+        error = self.failure(Unauthorized, fileops.copy_entries, readonly, [A_TXT], HOME + "/out")
+        self.assertEqual(error.code, "unauthorized")
+        self.assertFalse(self.client.exists(HOME + "/out/a.txt"))
+
+
+class MoveTests(FileOpsTestCase):
+    def test_moves_a_file(self):
+        self.put("a.txt", "hello\n")
+        self.client.add_dir(HOME + "/out")
+        result = fileops.move_entries(self.session, [A_TXT], HOME + "/out")
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(
+            result["moved"],
+            [{"source": A_TXT, "path": HOME + "/out/a.txt", "name": "a.txt"}],
+        )
+        self.assertFalse(self.client.exists(A_TXT))
+        self.assertEqual(self.client.text(HOME + "/out/a.txt"), "hello\n")
+
+    def test_moves_a_directory_with_its_content(self):
+        self.client.add_dir(HOME + "/d")
+        self.put("d/x.txt", "x")
+        self.client.add_dir(HOME + "/out")
+        fileops.move_entries(self.session, [HOME + "/d"], HOME + "/out")
+        self.assertFalse(self.client.exists(HOME + "/d"))
+        self.assertEqual(self.client.text(HOME + "/out/d/x.txt"), "x")
+
+    def test_an_existing_target_is_refused_and_the_source_is_kept(self):
+        self.put("a.txt", "new\n")
+        self.client.add_dir(HOME + "/out")
+        self.put("out/a.txt", "old\n")
+        error = self.failure(ValidationError, fileops.move_entries, self.session, [A_TXT], HOME + "/out")
+        self.assertEqual(error.code, "invalid_request")
+        self.assertEqual(self.client.text(A_TXT), "new\n")
+        self.assertEqual(self.client.text(HOME + "/out/a.txt"), "old\n")
+
+    def test_write_permission_is_required(self):
+        self.put("a.txt", "x")
+        self.client.add_dir(HOME + "/out")
+        readonly = make_session(self.client, allow_write=False)
+        self.failure(Unauthorized, fileops.move_entries, readonly, [A_TXT], HOME + "/out")
+
+    def test_a_failed_move_reports_what_already_moved(self):
+        self.put("a.txt", "a")
+        self.put("b.txt", "b")
+        self.client.add_dir(HOME + "/out")
+        real_rename = self.client.rename
+        state = {"calls": 0}
+
+        def flaky_rename(source, target):
+            state["calls"] += 1
+            if state["calls"] == 2:
+                raise RemoteError("模拟的远端失败。")
+            return real_rename(source, target)
+
+        with mock.patch.object(self.client, "rename", flaky_rename):
+            error = self.failure(
+                RemoteError,
+                fileops.move_entries,
+                self.session,
+                [A_TXT, HOME + "/b.txt"],
+                HOME + "/out",
+            )
+        # 已经移走的那一项必须如实报出来，且源文件确实已经到了目标位置。
+        self.assertEqual(error.extra["done"], [HOME + "/out/a.txt"])
+        self.assertEqual(error.extra["failed"], HOME + "/b.txt")
+        self.assertTrue(self.client.exists(HOME + "/out/a.txt"))
+        self.assertTrue(self.client.exists(HOME + "/b.txt"))
+
+
+
+class BatchTests(FileOpsTestCase):
+    def test_deletes_many_entries(self):
+        self.put("a.txt", "a")
+        self.client.add_dir(HOME + "/d")
+        self.put("d/x.txt", "x")
+        result = fileops.delete_entries(self.session, [A_TXT, HOME + "/d"], recursive=True)
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(result["files"], 2)
+        self.assertEqual(result["directories"], 1)
+        self.assertEqual(result["entries"], 3)
+        self.assertTrue(result["recursive"])
+        self.assertFalse(self.client.exists(A_TXT))
+        self.assertFalse(self.client.exists(HOME + "/d"))
+
+    def test_a_failure_reports_what_was_already_deleted(self):
+        self.put("a.txt", "a")
+        missing = HOME + "/nope"
+        error = self.failure(PathNotFound, fileops.delete_entries, self.session, [A_TXT, missing])
+        self.assertEqual(error.extra["done"], [A_TXT])
+        self.assertEqual(error.extra["failed"], missing)
+        self.assertFalse(self.client.exists(A_TXT))
+
+    def test_compresses_many_entries_into_one_archive(self):
+        self.put("a.txt", "hello\n")
+        self.put("b.txt", "bye")
+        result = fileops.compress_entries(self.session, [A_TXT, HOME + "/b.txt"])
+        self.assertEqual(result["path"], HOME + "/archive.tar.gz")
+        self.assertEqual(result["sources"], [A_TXT, HOME + "/b.txt"])
+        self.assertEqual(result["source"], A_TXT)
+        self.assertEqual(result["entries"], 2)
+        self.assertEqual(result["bytes"], 9)
+        members = self.archive_members(result["path"])
+        self.assertEqual(sorted(members), ["a.txt", "b.txt"])
+
+    def test_batch_compression_honours_name_and_target_directory(self):
+        self.put("a.txt", "a")
+        self.put("b.txt", "b")
+        self.client.add_dir(HOME + "/out")
+        result = fileops.compress_entries(
+            self.session, [A_TXT, HOME + "/b.txt"], name="pack", into=HOME + "/out"
+        )
+        self.assertEqual(result["name"], "pack.tar.gz")
+        self.assertEqual(result["path"], HOME + "/out/pack.tar.gz")
+        self.assertEqual(sorted(self.archive_members(result["path"])), ["a.txt", "b.txt"])
+
+    def test_batch_compress_needs_at_least_one_entry(self):
+        self.failure(ValidationError, fileops.compress_entries, self.session, [])
+
+    def test_extracting_many_archives_returns_a_summary(self):
+        first = self.put("one.tar.gz", build_tar_gz([("one.txt", b"1")]))
+        second = self.put("two.tar.gz", build_tar_gz([("two.txt", b"22")]))
+        result = fileops.extract_entries(self.session, [first, second])
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(result["files"], 2)
+        self.assertEqual(result["bytes"], 3)
+        self.assertEqual(len(result["archives"]), 2)
+        self.assertEqual(self.client.text(HOME + "/one.txt"), "1")
+        self.assertEqual(self.client.text(HOME + "/two.txt"), "22")
+
+    def test_a_failed_batch_extract_reports_what_already_unpacked(self):
+        good = self.put("good.tar.gz", build_tar_gz([("good.txt", b"g")]))
+        bad = self.put("bad.txt", b"not an archive")
+        error = self.failure(ValidationError, fileops.extract_entries, self.session, [good, bad])
+        self.assertEqual(error.extra["done"], [good])
+        self.assertEqual(error.extra["failed"], bad)
+        # 已经解出来的文件不回滚，界面要能说清「这个包解开了、那个包不行」。
+        self.assertTrue(self.client.exists(HOME + "/good.txt"))
+
+    def test_batch_extract_needs_at_least_one_archive(self):
+        self.failure(ValidationError, fileops.extract_entries, self.session, [])
+
+    def test_extracting_one_archive_keeps_the_old_response_shape(self):
+        path = self.put("one.tar.gz", build_tar_gz([("one.txt", b"1")]))
+        result = fileops.extract_entries(self.session, [path])
+        self.assertNotIn("archives", result)
+        self.assertEqual(result["destination"], HOME)
+        self.assertEqual(result["files"], 1)
 
 
 class HelperTests(unittest.TestCase):

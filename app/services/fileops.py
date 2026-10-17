@@ -1,4 +1,4 @@
-"""文件操作：重命名、删除、压缩、解压（阶段四）。
+"""文件操作：新建、复制、移动、重命名、删除、压缩、解压。
 
 ## 为什么压缩与解压在本地做
 
@@ -18,6 +18,17 @@
 3. 压缩包里的名字一律当不可信输入。绝对路径、含 .. 的成员名直接拒绝解压；
    符号链接、硬链接、设备文件跳过并如实报告 —— 否则一个构造过的 tar 就能
    往远端任意位置写文件。跳过的条目会在响应里列出来，不静默吞掉。
+
+## 新建为什么用 EXCL 而不是「先查再建」
+
+v0.1.3 §4 明确要求排他创建语义。「先 stat 确认不存在，再 create」在两个人同时
+新建同名文件时会双双通过检查、后到的那个静默覆盖先到的 —— 这正是任务书禁止的
+「静默覆盖」。所以新建文件走 `CREAT|EXCL`（服务端原子地拒绝已存在的目标），
+新建目录走 `MKDIR`（POSIX 语义本身就是排他的）。前置的 `lstat` 只为把「已存在」
+翻译成人话，不承担互斥职责。
+
+复制不用远端命令（T-013），走 SFTP 读 + 写：内存里只有一个块（决策 D-007），
+符号链接不在复制范围内（我们的 SFTP 客户端没有创建链接的能力），跳过并如实报告。
 """
 
 from __future__ import annotations
@@ -29,10 +40,18 @@ import uuid
 import zipfile
 from typing import Any
 
-from app.core.errors import PathNotFound, ProtocolError, ValidationError
+from app.core.errors import (
+    AwfmError,
+    NotConnected,
+    PathNotFound,
+    PermissionDenied,
+    ProtocolError,
+    ValidationError,
+)
 from app.services.filesystem import require_write_permission, resolve_path
 from app.services.session import RemoteSession
 from app.services.transfer import PART_SUFFIX
+from app.ssh import sftp_protocol as proto
 from app.ssh.sftp_client import ChunkWriter, RandomReader
 from app.utils.paths import (
     join_remote_path,
@@ -63,6 +82,12 @@ MAX_DELETE_ENTRIES = 10000
 
 #: 目录层级上限。防的是「结构异常深」的树，不是正常的项目目录。
 MAX_TREE_DEPTH = 64
+
+#: 一次复制最多处理多少个条目（与删除、压缩同一量级）。
+MAX_COPY_ENTRIES = 10000
+
+#: 一次复制搬运的原始字节上限。
+MAX_COPY_BYTES = 512 * 1024 * 1024
 
 
 class _ExtractStop(Exception):
@@ -159,6 +184,304 @@ def rename_entry(session: RemoteSession, raw_path: str, new_name: str) -> dict:
     }
 
 
+# --------------------------------------------------------------------- 新建
+
+
+def _directory_target(session: RemoteSession, raw_dir: str, *, action: str) -> str:
+    """把「目标目录」解析成 REALPATH，并确认它真的是目录。
+
+    写入发生在目录内部，所以这里可以整条路径交给 realpath（与删除、重命名
+    只解析父目录不同）：用户选中的是「往哪个目录里写」，不是某个条目本身。
+    """
+    validated = validate_remote_path(raw_dir)
+    client = session.client
+    resolved = client.realpath(validated)
+    attrs = client.stat(resolved)
+    if not attrs.is_dir:
+        raise ValidationError(
+            f"{action}的目标不是目录。",
+            detail=f"{resolved}（{attrs.type}）。",
+            extra={"path": resolved},
+        )
+    return resolved
+
+
+def _already_exists(target: str, attrs) -> ValidationError:
+    """「同名条目已存在」的统一说法：拒绝创建，绝不静默覆盖。"""
+    return ValidationError(
+        "同名条目已经存在。",
+        detail=f"{target}（{attrs.type}）。请换一个名称。",
+        extra={"path": target, "exists": True, "type": attrs.type},
+    )
+
+
+def create_entry(session: RemoteSession, raw_directory: str, name: str, *, kind: str) -> dict:
+    """在远端目录里新建一个空文件或一个空目录。
+
+    排他语义（v0.1.3 §4）：
+    - 文件走 `CREAT|EXCL`，已存在由服务端原子的拒绝，检查与创建之间没有窗口；
+    - 目录走 `MKDIR`，POSIX 语义本身就不覆盖已存在的路径。
+    前面的 `lstat` 只负责把失败翻译成「同名条目已经存在」，不承担互斥职责。
+    """
+    if kind not in ("file", "directory"):
+        raise ValidationError("kind 只允许 file 或 directory。", detail=str(kind))
+    require_write_permission(session, "新建文件" if kind == "file" else "新建文件夹")
+    valid_name = validate_remote_name(name)
+    client = session.client
+    directory = _directory_target(session, raw_directory, action="新建")
+    target = join_remote_path(directory, valid_name)
+    existing = _exists(client, target)
+    if existing is not None:
+        raise _already_exists(target, existing)
+
+    if kind == "directory":
+        try:
+            client.mkdir(target, 0o755)
+        except (PathNotFound, PermissionDenied, NotConnected):
+            raise
+        except AwfmError:
+            existing = _exists(client, target)
+            if existing is not None:
+                raise _already_exists(target, existing)
+            raise
+    else:
+        handle = None
+        try:
+            handle = client.open(
+                target,
+                proto.SSH_FXF_WRITE | proto.SSH_FXF_CREAT | proto.SSH_FXF_EXCL,
+                0o644,
+            )
+        except (PathNotFound, PermissionDenied, NotConnected):
+            raise
+        except AwfmError:
+            existing = _exists(client, target)
+            if existing is not None:
+                raise _already_exists(target, existing)
+            raise
+        finally:
+            if handle is not None:
+                client.close(handle)
+
+    attrs = client.lstat(target)
+    logger.info("新建%s %s", "文件" if kind == "file" else "文件夹", target)
+    return {
+        "path": target,
+        "name": valid_name,
+        "kind": kind,
+        "type": attrs.type,
+        "size": attrs.size,
+        "mtime": attrs.mtime,
+    }
+
+
+# --------------------------------------------------------------------- 复制与移动
+
+
+def _batch_sources(
+    session: RemoteSession,
+    raw_paths: Any,
+    raw_directory: str,
+    *,
+    action: str,
+) -> tuple[str, list[tuple[str, str]]]:
+    """把「一串源路径 + 一个目标目录」规范成 [(源, 目标)]，并挡掉自指与越界。
+
+    源条目按「父目录 REALPATH + 原样最后一段」规范化（与删除、压缩一致）：
+    移动一个符号链接要移动链接本身，不能解析成它指向的东西。
+    """
+    if not isinstance(raw_paths, (list, tuple)) or not raw_paths:
+        raise ValidationError(f"请至少选择一个要{action}的条目。")
+    if len(raw_paths) > MAX_COPY_ENTRIES:
+        raise ValidationError(
+            f"一次{action}的条目太多。",
+            detail=f"最多 {MAX_COPY_ENTRIES} 项，收到 {len(raw_paths)} 项。",
+        )
+    client = session.client
+    directory = _directory_target(session, raw_directory, action=action)
+    pairs: list[tuple[str, str]] = []
+    for raw in raw_paths:
+        if not isinstance(raw, str) or not raw:
+            raise ValidationError(f"要{action}的路径必须是字符串。")
+        canonical = _canonical_entry_path(session, raw)
+        if canonical == "/":
+            raise ValidationError(f"不能{action}根目录。")
+        client.lstat(canonical)  # 源不存在时按 path_not_found 上报
+        target = join_remote_path(directory, name_of(canonical))
+        if target == canonical:
+            raise ValidationError(f"源和目标在同一个位置，不需要{action}。", detail=canonical)
+        if target.startswith(canonical + "/"):
+            raise ValidationError(
+                f"不能把目录{action}到它自己里面。",
+                detail=f"{canonical} -> {directory}",
+            )
+        pairs.append((canonical, target))
+    return directory, pairs
+
+
+def _target_conflicts(client, pairs: list[tuple[str, str]]) -> list[dict]:
+    found = []
+    for source, target in pairs:
+        attrs = _exists(client, target)
+        if attrs is not None:
+            found.append({"source": source, "target": target, "type": attrs.type})
+    return found
+
+
+def _describe_conflicts(conflicts: list[dict]) -> str:
+    names = [item["source"].rpartition("/")[2] for item in conflicts]
+    return "、".join(names)
+
+
+def _copy_tree(client, source: str, target: str, stats: dict, *, depth: int) -> None:
+    """把 source 复制到 target（目录则递归）。
+
+    符号链接与设备文件跳过并报告：SFTP v3 没有创建链接的请求，
+    假装复制成功会在目标端留下一个空文件，那比明确说「没复制」更糟。
+    """
+    attrs = client.lstat(source)
+    stats["entries"] += 1
+    if stats["entries"] > MAX_COPY_ENTRIES:
+        raise ValidationError(
+            "要复制的条目太多，已停止。",
+            detail=f"超过 {MAX_COPY_ENTRIES} 个条目。请分几次复制，或先整理源目录。",
+            extra={"path": source, "limit": MAX_COPY_ENTRIES},
+        )
+    if attrs.is_link:
+        stats["skipped"].append(
+            {
+                "name": name_of(source),
+                "path": source,
+                "type": "symlink",
+                "code": "symlink_skipped",
+                "message": "符号链接不在复制范围内，已跳过。",
+            }
+        )
+        return
+    if attrs.is_dir:
+        mode = (attrs.permissions or 0o755) & 0o777
+        existing = _exists(client, target)
+        if existing is None:
+            client.mkdir(target, mode)
+            stats["directories"] += 1
+        elif not existing.is_dir:
+            raise ValidationError(
+                "目标位置有同名文件，无法把目录复制进去。",
+                detail=f"{target}（{existing.type}）。请先处理掉它。",
+                extra={"path": target, "exists": True, "type": existing.type},
+            )
+        if depth >= MAX_TREE_DEPTH:
+            raise ValidationError(
+                "目录层级过深，已停止复制。",
+                detail=f"{source} 超过 {MAX_TREE_DEPTH} 层。",
+                extra={"path": source},
+            )
+        for child in client.listdir(source):
+            _copy_tree(
+                client,
+                join_remote_path(source, child.filename),
+                join_remote_path(target, child.filename),
+                stats,
+                depth=depth + 1,
+            )
+        return
+    if attrs.type != "file":
+        stats["skipped"].append(
+            {
+                "name": name_of(source),
+                "path": source,
+                "type": attrs.type,
+                "code": "unsupported_type",
+                "message": "只复制普通文件、目录，这个条目已跳过。",
+            }
+        )
+        return
+    size = attrs.size or 0
+    stats["bytes"] += size
+    if stats["bytes"] > MAX_COPY_BYTES:
+        raise ValidationError(
+            "要复制的内容太大，已停止。",
+            detail=f"累计超过 {MAX_COPY_BYTES} 字节。",
+            extra={"path": source, "limit": MAX_COPY_BYTES},
+        )
+    client.upload_stream(
+        target,
+        client.download_chunks(source),
+        expected_size=size,
+        mode=(attrs.permissions or 0o644) & 0o777,
+    )
+    stats["files"] += 1
+
+
+def copy_entries(
+    session: RemoteSession,
+    raw_paths: Any,
+    raw_directory: str,
+    *,
+    overwrite: bool = False,
+) -> dict:
+    """把若干条目复制到目标目录里（同名即拒绝，除非显式 overwrite）。"""
+    require_write_permission(session, "复制")
+    client = session.client
+    directory, pairs = _batch_sources(session, raw_paths, raw_directory, action="复制")
+    conflicts = _target_conflicts(client, pairs)
+    if conflicts and not overwrite:
+        raise ValidationError(
+            "目标位置已经有同名条目。",
+            detail=f"{_describe_conflicts(conflicts)}。请换一个目录，或确认覆盖。",
+            extra={"conflicts": conflicts, "exists": True},
+        )
+    stats: dict[str, Any] = {"entries": 0, "files": 0, "directories": 0, "bytes": 0, "skipped": []}
+    copied = []
+    for source, target in pairs:
+        _copy_tree(client, source, target, stats, depth=0)
+        copied.append({"source": source, "path": target, "name": name_of(target)})
+    logger.info("复制 %d 项 -> %s", len(copied), directory)
+    return {
+        "destination": directory,
+        "copied": copied,
+        "files": stats["files"],
+        "directories": stats["directories"],
+        "bytes": stats["bytes"],
+        "skipped": stats["skipped"],
+        "overwrite": bool(overwrite),
+    }
+
+
+def move_entries(session: RemoteSession, raw_paths: Any, raw_directory: str) -> dict:
+    """把若干条目移动到目标目录里。
+
+    移动不做「先复制再删除」：SFTP 的 RENAME 在同一个服务端内完成，
+    中途失败不会出现「源没了、目标只有一半」的状态。目标已存在一律拒绝
+    （SFTP v3 的 RENAME 本来也不覆盖），不提供覆盖选项。
+    """
+    require_write_permission(session, "移动")
+    client = session.client
+    directory, pairs = _batch_sources(session, raw_paths, raw_directory, action="移动")
+    conflicts = _target_conflicts(client, pairs)
+    if conflicts:
+        raise ValidationError(
+            "目标位置已经有同名条目。",
+            detail=f"{_describe_conflicts(conflicts)}。请换一个目录，或先处理掉同名条目。",
+            extra={"conflicts": conflicts, "exists": True},
+        )
+    moved = []
+    for source, target in pairs:
+        try:
+            client.rename(source, target)
+        except AwfmError as exc:
+            # 逐项记账：前面的已经移走了，界面要说清「哪几项成了、哪一项没成」。
+            exc.extra = dict(
+                exc.extra or {},
+                done=[item["path"] for item in moved],
+                failed=source,
+            )
+            raise
+        moved.append({"source": source, "path": target, "name": name_of(target)})
+    logger.info("移动 %d 项 -> %s", len(moved), directory)
+    return {"destination": directory, "moved": moved, "count": len(moved)}
+
+
 # --------------------------------------------------------------------- 删除
 
 
@@ -238,6 +561,45 @@ def delete_entry(session: RemoteSession, raw_path: str, *, recursive: bool = Fal
         "recursive": bool(recursive),
         "removed": removed,
         "entries": removed["files"] + removed["directories"],
+    }
+
+
+def delete_entries(session: RemoteSession, raw_paths: Any, *, recursive: bool = False) -> dict:
+    """批量删除。
+
+    逐项删除、逐项记账：某一项失败时把已删掉的清单留在错误的 extra 里再抛出，
+    界面才能如实说「这 3 个删了、第 4 个没删掉」，而不是含糊地说「删除失败」。
+    递归确认（recursive）由调用方显式给出，和单项删除同一条纪律。
+    """
+    if not isinstance(raw_paths, (list, tuple)) or not raw_paths:
+        raise ValidationError("请至少选择一个要删除的条目。")
+    if len(raw_paths) > MAX_DELETE_ENTRIES:
+        raise ValidationError(
+            "一次删除的条目太多。",
+            detail=f"最多 {MAX_DELETE_ENTRIES} 项，收到 {len(raw_paths)} 项。",
+        )
+    results = []
+    for raw in raw_paths:
+        if not isinstance(raw, str) or not raw:
+            raise ValidationError("要删除的路径必须是字符串。")
+        try:
+            results.append(delete_entry(session, raw, recursive=recursive))
+        except AwfmError as exc:
+            exc.extra = dict(
+                exc.extra or {},
+                done=[item["path"] for item in results],
+                failed=raw,
+            )
+            raise
+    files = sum(item["removed"]["files"] for item in results)
+    directories = sum(item["removed"]["directories"] for item in results)
+    return {
+        "deleted": results,
+        "count": len(results),
+        "files": files,
+        "directories": directories,
+        "entries": files + directories,
+        "recursive": bool(recursive),
     }
 
 
@@ -324,21 +686,42 @@ def _add_to_tar(client, tar, path: str, arcname: str, stats: dict, *, depth: int
         tar.addfile(info, RandomReader(client, handle, size=size))
 
 
-def compress_entry(session: RemoteSession, raw_path: str, *, name: str = "") -> dict:
-    """把一个远端条目打包成 .tar.gz，放在它旁边。
+def compress_entries(
+    session: RemoteSession,
+    raw_paths: Any,
+    *,
+    name: str = "",
+    into: str = "",
+) -> dict:
+    """把若干远端条目打包成一个 .tar.gz。
+
+    Args:
+        raw_paths: 要打包的条目（至少一个）。
+        name: 压缩包名字；留空时单个条目用条目名、多个条目用 archive。
+        into: 压缩包放在哪个目录；留空时放在第一个源条目所在的目录。
 
     先写成临时名，成功后再改名过来：中途失败（断线、超上限）不会在远端
     留下一个看起来正常、其实不完整的压缩包。
     """
     require_write_permission(session, "压缩")
-    canonical = _canonical_entry_path(session, raw_path)
-    if canonical == "/":
-        raise ValidationError("不能压缩根目录。", detail="请进入某个目录，再选择要压缩的条目。")
+    if not isinstance(raw_paths, (list, tuple)) or not raw_paths:
+        raise ValidationError("请至少选择一个要压缩的条目。")
     client = session.client
-    client.lstat(canonical)
-    base = name_of(canonical)
+    members: list[tuple[str, str]] = []
+    for raw in raw_paths:
+        if not isinstance(raw, str) or not raw:
+            raise ValidationError("要压缩的路径必须是字符串。")
+        canonical = _canonical_entry_path(session, raw)
+        if canonical == "/":
+            raise ValidationError("不能压缩根目录。", detail="请进入某个目录，再选择要压缩的条目。")
+        client.lstat(canonical)
+        members.append((canonical, name_of(canonical)))
+    canonical = members[0][0]
+    base = members[0][1] if len(members) == 1 else "archive"
     archive_name = _archive_name(validate_remote_name(name) if name else base)
-    parent = parent_remote_path(canonical) or "/"
+    parent = _directory_target(session, into, action="压缩") if into else (
+        parent_remote_path(canonical) or "/"
+    )
     target = join_remote_path(parent, archive_name)
     if _exists(client, target) is not None:
         raise ValidationError(
@@ -355,7 +738,8 @@ def compress_entry(session: RemoteSession, raw_path: str, *, name: str = "") -> 
             # mtime=0：同一个目录压两次得到同样的字节，便于核对与去重。
             with gzip.GzipFile(fileobj=writer, mode="wb", mtime=0) as gz:
                 with tarfile.open(fileobj=gz, mode="w|", format=tarfile.GNU_FORMAT) as tar:
-                    _add_to_tar(client, tar, canonical, base, stats, depth=0)
+                    for member, arcname in members:
+                        _add_to_tar(client, tar, member, arcname, stats, depth=0)
         client.rename(temp, target)
         temp = ""
     finally:
@@ -366,9 +750,10 @@ def compress_entry(session: RemoteSession, raw_path: str, *, name: str = "") -> 
                 logger.warning("清理未完成的压缩临时文件失败：%s", temp)
 
     attrs = client.lstat(target)
-    logger.info("压缩完成 %s -> %s（%d 个条目）", canonical, target, stats["entries"])
+    logger.info("压缩完成 %s -> %s（%d 个条目）", "、".join(item[0] for item in members), target, stats["entries"])
     return {
         "source": canonical,
+        "sources": [item[0] for item in members],
         "path": target,
         "name": archive_name,
         "format": "tar.gz",
@@ -378,6 +763,11 @@ def compress_entry(session: RemoteSession, raw_path: str, *, name: str = "") -> 
         "bytes": stats["bytes"],
         "skipped": stats["skipped"],
     }
+
+
+def compress_entry(session: RemoteSession, raw_path: str, *, name: str = "") -> dict:
+    """兼容旧调用：压缩单个条目（放进它所在的目录）。"""
+    return compress_entries(session, [raw_path], name=name)
 
 
 # --------------------------------------------------------------------- 解压
@@ -658,13 +1048,60 @@ def extract_entry(
         "overwrite": bool(overwrite),
     }
 
+def extract_entries(
+    session: RemoteSession,
+    raw_paths: Any,
+    *,
+    into: str = "",
+    overwrite: bool = False,
+) -> dict:
+    """批量解压：逐个压缩包调用 extract_entry。
+
+    单个压缩包时**原样返回那一份结果**（保持 v0.1.2 的响应形状不变），
+    多个时才多一层 archives 汇总。
+    """
+    if not isinstance(raw_paths, (list, tuple)) or not raw_paths:
+        raise ValidationError("请至少选择一个要解压的压缩包。")
+    results = []
+    for raw in raw_paths:
+        if not isinstance(raw, str) or not raw:
+            raise ValidationError("要解压的路径必须是字符串。")
+        try:
+            results.append(extract_entry(session, raw, into=into, overwrite=overwrite))
+        except AwfmError as exc:
+            # 已解开的包不回滚，但必须如实报告：哪些包成了、哪一包挡住了。
+            exc.extra = dict(
+                exc.extra or {},
+                done=[item["path"] for item in results],
+                failed=raw,
+            )
+            raise
+    if len(results) == 1:
+        return results[0]
+    return {
+        "archives": results,
+        "count": len(results),
+        "entries": sum(item["entries"] for item in results),
+        "files": sum(item["files"] for item in results),
+        "directories": sum(item["directories"] for item in results),
+        "bytes": sum(item["bytes"] for item in results),
+        "stopped": next((item["stopped"] for item in results if item["stopped"]), None),
+    }
+
+
 
 __all__ = [
     "ARCHIVE_SUFFIXES",
     "archive_format",
+    "compress_entries",
     "compress_entry",
+    "copy_entries",
+    "create_entry",
+    "delete_entries",
     "delete_entry",
+    "extract_entries",
     "extract_entry",
+    "move_entries",
     "name_of",
     "rename_entry",
 ]

@@ -215,6 +215,9 @@ class FakeSFTPClient:
         self.log.append(("open", resolved, pflags))
         writing = bool(pflags & proto.SSH_FXF_WRITE)
         node = self.nodes.get(resolved)
+        if node is not None and pflags & proto.SSH_FXF_EXCL:
+            # 排他创建：目标已存在就必须失败，绝不覆盖（与真实 SFTP 的 STATUS 4 对应）。
+            raise RemoteError("目标已经存在：" + resolved)
         if node is None:
             if not (writing and pflags & proto.SSH_FXF_CREAT):
                 raise PathNotFound("远端路径不存在：" + resolved)
@@ -243,6 +246,13 @@ class FakeSFTPClient:
             yield handle
         finally:
             self.close(handle)
+
+    def download_chunks(self, path, chunk_size=65536):
+        """按块读出文件内容 —— 与真实客户端同名同义，供复制（读+写）使用。"""
+        self._guard()
+        data = self.read(path)
+        for offset in range(0, len(data), chunk_size):
+            yield data[offset : offset + chunk_size]
 
     @contextmanager
     def open_write(self, path, *, mode=0o644):

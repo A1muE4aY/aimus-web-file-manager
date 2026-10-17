@@ -432,6 +432,225 @@ class FileOpsApiTests(unittest.TestCase):
         self.assert_refused(response, 400, "invalid_request")
         self.assertIn("目录", response.error["message"])
 
+    # ------------------------------------------------------------- 新建 / 复制 / 移动 / 批量
+
+    def create(self, name, *, kind="file", directory=None, connection=CONNECTION):
+        return self.post(
+            "create",
+            {"path": directory or self.root, "name": name, "kind": kind},
+            connection=connection,
+        )
+
+    def copy(self, targets, into, *, overwrite=False, connection=CONNECTION):
+        return self.post(
+            "copy",
+            {"paths": [self.path(item) for item in targets], "to": into, "overwrite": overwrite},
+            connection=connection,
+        )
+
+    def move(self, targets, into, *, connection=CONNECTION):
+        return self.post(
+            "move",
+            {"paths": [self.path(item) for item in targets], "to": into},
+            connection=connection,
+        )
+
+    def test_create_an_empty_file(self):
+        entry = self.ok(self.create("new-empty.txt"), "entry", status=201)
+        self.assertEqual(entry["name"], "new-empty.txt")
+        self.assertEqual(entry["path"], self.path("new-empty.txt"))
+        self.assertEqual(entry["kind"], "file")
+        self.assertEqual(entry["type"], "file")
+        self.assertEqual(entry["size"], 0)
+        self.assertIn("new-empty.txt", self.names(self.root))
+        # 关键断言：远端真的是 0 字节文件，不只是响应这么说。
+        self.assertEqual(self.remote_bytes("new-empty.txt"), b"")
+        listing = self.client.get(connection_url(CONNECTION, "files", path=self.root))
+        self.assertEqual(listing.status, 200, listing)
+        listed = {item["name"]: item for item in listing.data["entries"]}
+        self.assertEqual(listed["new-empty.txt"]["size"], 0)
+        self.assertEqual(listed["new-empty.txt"]["type"], "file")
+
+    def test_create_a_directory(self):
+        entry = self.ok(self.create("new-folder", kind="directory"), "entry", status=201)
+        self.assertEqual(entry["kind"], "directory")
+        self.assertEqual(entry["type"], "directory")
+        self.assertIn("new-folder", self.names(self.root))
+        # 新目录能继续放东西，说明权限位对得上。
+        self.put("inside.txt", "inside\n", directory=self.path("new-folder"))
+        self.assertEqual(self.remote_bytes("new-folder/inside.txt"), b"inside\n")
+
+    def test_create_accepts_chinese_and_spaces(self):
+        for name in ("中文文件.txt", "with space.txt", "逗号,括号(1).txt"):
+            with self.subTest(name=name):
+                entry = self.ok(self.create(name), "entry", status=201)
+                self.assertEqual(entry["name"], name)
+                self.assertIn(name, self.names(self.root))
+                self.assertEqual(self.remote_bytes(name), b"")
+
+    def test_create_refuses_an_existing_name(self):
+        self.put("taken.txt", "taken\n")
+        response = self.create("taken.txt")
+        self.assert_refused(response, 400, "invalid_request")
+        self.assertTrue(response.error["exists"])
+        self.assertEqual(response.error["path"], self.path("taken.txt"))
+        # 关键断言：没有静默覆盖已有内容。
+        self.assertEqual(self.remote_bytes("taken.txt"), b"taken\n")
+
+    def test_create_refuses_an_existing_directory_name(self):
+        self.mkdirs("taken-dir")
+        response = self.create("taken-dir", kind="directory")
+        self.assert_refused(response, 400, "invalid_request")
+
+    def test_create_rejects_invalid_names(self):
+        for name in ("", ".", "..", "sub/x.txt", "a" * 300):
+            with self.subTest(name=name[:12]):
+                self.assert_refused(self.create(name), 400, "invalid_request")
+
+    def test_create_missing_directory_is_not_found(self):
+        response = self.create("orphan.txt", directory=self.path("no-such-dir"))
+        self.assert_refused(response, 404, "path_not_found")
+
+    def test_create_requires_the_write_toggle(self):
+        response = self.create("denied.txt", connection=READONLY_CONNECTION)
+        self.assert_refused(response, 401, "unauthorized")
+        self.assertNotIn("denied.txt", self.names(self.root))
+
+    def test_copy_a_file_keeps_the_source(self):
+        self.put("cp-src.txt", "copy me\n")
+        self.mkdirs("cp-out")
+        copied = self.ok(self.copy(["cp-src.txt"], self.path("cp-out")), "copy", status=201)
+        self.assertEqual(copied["destination"], self.path("cp-out"))
+        self.assertEqual(copied["files"], 1)
+        self.assertEqual(copied["directories"], 0)
+        self.assertEqual(copied["bytes"], len("copy me\n"))
+        self.assertEqual(copied["skipped"], [])
+        self.assertEqual(self.names(self.path("cp-out")), ["cp-src.txt"])
+        # 关键断言：字节一致，且源文件还在。
+        self.assertEqual(self.remote_bytes("cp-out/cp-src.txt"), b"copy me\n")
+        self.assertEqual(self.remote_bytes("cp-src.txt"), b"copy me\n")
+
+    def test_copy_a_directory_tree(self):
+        self.mkdirs("cp-tree/inner")
+        self.put("mid.txt", "mid\n", directory=self.path("cp-tree"))
+        self.put("leaf.txt", "leaf\n", directory=self.path("cp-tree/inner"))
+        self.mkdirs("cp-tree-out")
+        copied = self.ok(
+            self.copy(["cp-tree"], self.path("cp-tree-out")), "copy", status=201
+        )
+        self.assertEqual(copied["files"], 2)
+        self.assertEqual(copied["directories"], 2)
+        self.assertEqual(copied["bytes"], len("mid\n") + len("leaf\n"))
+        self.assertEqual(self.names(self.path("cp-tree-out/cp-tree/inner")), ["leaf.txt"])
+        self.assertEqual(self.remote_bytes("cp-tree-out/cp-tree/inner/leaf.txt"), b"leaf\n")
+
+    def test_copy_refuses_an_existing_target(self):
+        self.put("cp-busy.txt", "new\n")
+        self.mkdirs("cp-busy-out")
+        self.put("cp-busy.txt", "old\n", directory=self.path("cp-busy-out"))
+        response = self.copy(["cp-busy.txt"], self.path("cp-busy-out"))
+        self.assert_refused(response, 400, "invalid_request")
+        self.assertEqual(
+            response.error["conflicts"][0]["target"], self.path("cp-busy-out/cp-busy.txt")
+        )
+        self.assertEqual(self.remote_bytes("cp-busy-out/cp-busy.txt"), b"old\n")
+
+    def test_copy_with_overwrite_replaces_the_target(self):
+        self.put("cp-over.txt", "new\n")
+        self.mkdirs("cp-over-out")
+        self.put("cp-over.txt", "old\n", directory=self.path("cp-over-out"))
+        copied = self.ok(
+            self.copy(["cp-over.txt"], self.path("cp-over-out"), overwrite=True),
+            "copy",
+            status=201,
+        )
+        self.assertTrue(copied["overwrite"])
+        self.assertEqual(self.remote_bytes("cp-over-out/cp-over.txt"), b"new\n")
+
+    def test_copy_into_itself_is_refused(self):
+        self.mkdirs("cp-loop/inner")
+        response = self.copy(["cp-loop"], self.path("cp-loop/inner"))
+        self.assert_refused(response, 400, "invalid_request")
+        self.assertIn("自己", response.error["message"])
+
+    def test_move_a_file(self):
+        self.put("mv-src.txt", "move me\n")
+        self.mkdirs("mv-out")
+        moved = self.ok(self.move(["mv-src.txt"], self.path("mv-out")), "move")
+        self.assertEqual(moved["count"], 1)
+        self.assertEqual(moved["moved"][0]["path"], self.path("mv-out/mv-src.txt"))
+        self.assertNotIn("mv-src.txt", self.names(self.root))
+        self.assertEqual(self.remote_bytes("mv-out/mv-src.txt"), b"move me\n")
+
+    def test_move_refuses_an_existing_target_and_keeps_the_source(self):
+        self.put("mv-busy.txt", "new\n")
+        self.mkdirs("mv-busy-out")
+        self.put("mv-busy.txt", "old\n", directory=self.path("mv-busy-out"))
+        response = self.move(["mv-busy.txt"], self.path("mv-busy-out"))
+        self.assert_refused(response, 400, "invalid_request")
+        self.assertIn("mv-busy.txt", self.names(self.root))
+        self.assertEqual(self.remote_bytes("mv-busy.txt"), b"new\n")
+        self.assertEqual(self.remote_bytes("mv-busy-out/mv-busy.txt"), b"old\n")
+
+    def test_batch_delete(self):
+        self.put("bd-a.txt", "a\n")
+        self.mkdirs("bd-dir")
+        self.put("x.txt", "x\n", directory=self.path("bd-dir"))
+        response = self.post(
+            "delete",
+            {"paths": [self.path("bd-a.txt"), self.path("bd-dir")], "recursive": True},
+        )
+        deleted = self.ok(response, "deleted")
+        self.assertEqual(deleted["count"], 2)
+        self.assertEqual(deleted["files"], 2)
+        self.assertEqual(deleted["directories"], 1)
+        self.assertEqual(deleted["entries"], 3)
+        listing = self.names(self.root)
+        self.assertNotIn("bd-a.txt", listing)
+        self.assertNotIn("bd-dir", listing)
+
+    def test_batch_compress_makes_one_archive(self):
+        self.put("bc-a.txt", "abcde\n")
+        self.put("bc-b.txt", "fg\n")
+        archive = self.ok(
+            self.post(
+                "compress",
+                {"paths": [self.path("bc-a.txt"), self.path("bc-b.txt")], "name": "batch-pack"},
+            ),
+            "archive",
+            status=201,
+        )
+        self.assertEqual(archive["name"], "batch-pack.tar.gz")
+        self.assertEqual(archive["entries"], 2)
+        self.assertEqual(archive["bytes"], len("abcde\n") + len("fg\n"))
+        self.assertEqual(len(archive["sources"]), 2)
+        with self.fetch_archive("batch-pack.tar.gz") as tar:
+            members = sorted(item.name for item in tar.getmembers())
+            self.assertEqual(members, ["bc-a.txt", "bc-b.txt"])
+            self.assertEqual(tar.extractfile("bc-a.txt").read(), b"abcde\n")
+
+    def test_batch_extract_summarises_every_archive(self):
+        self.put("bx-one.tar.gz", build_tar_gz([("bx-one.txt", b"one\n")]))
+        self.put("bx-two.tar.gz", build_tar_gz([("bx-two.txt", b"two\n")]))
+        self.mkdirs("bx-out")
+        result = self.ok(
+            self.post(
+                "extract",
+                {
+                    "paths": [self.path("bx-one.tar.gz"), self.path("bx-two.tar.gz")],
+                    "into": self.path("bx-out"),
+                },
+            ),
+            "extract",
+            status=201,
+        )
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(result["files"], 2)
+        self.assertEqual(result["bytes"], len("one\n") + len("two\n"))
+        self.assertEqual(len(result["archives"]), 2)
+        self.assertEqual(self.remote_bytes("bx-out/bx-one.txt"), b"one\n")
+        self.assertEqual(self.remote_bytes("bx-out/bx-two.txt"), b"two\n")
+
     # ------------------------------------------------------------- 写权限与命令纪律
 
     def test_write_endpoints_require_the_write_toggle(self):

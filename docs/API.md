@@ -1,8 +1,8 @@
 # AWFM HTTP API 参考
 
-> 本文是 AWFM 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 32 个端点**、错误码全表，以及版本策略与写操作的分级和门禁。
+> 本文是 AWFM 本地服务的完整 HTTP 接口说明：统一响应信封、认证与安全机制、`ENDPOINTS` 中注册的**全部 35 个端点**、错误码全表，以及版本策略与写操作的分级和门禁。
 >
-> 文档日期 **2026-10-17** · 版本 `app/__init__.py:7`（`0.1.2`）· 端点总数 32（第 20~22 号检索、第 23~28 号在线编辑与文件操作、第 29~32 号在线虚拟机发现，均为 v0.1.1 引入、v0.1.2 未增删）· 路由注册处 `app/api/handlers.py:472`（`ENDPOINTS`）与 `app/api/handlers.py:509`（`build_router()`）
+> 文档日期 **2026-10-18** · 版本 `app/__init__.py:7`（开发中 `0.1.3`）· 端点总数 35（第 20~22 号检索、第 23~31 号在线编辑与文件操作、第 32~35 号在线虚拟机发现；其中第 25~27 号与批量 `paths` 是 v0.1.3 阶段 A 新增）· 路由注册处 `app/api/handlers.py:561`（`ENDPOINTS`）与 `app/api/handlers.py:601`（`build_router()`）
 >
 > 文中的 `handlers.py:NN` / `errors.py:NN` 行号按本文日期的工作树核对。v0.1.1 期间往 `ENDPOINTS` 里插端点会让旧行号漂移，引用时请以**函数名**为准。
 
@@ -184,16 +184,19 @@ Content-Type: application/json
 | 22 | DELETE | `/api/searches/{search_id}` | `cancel_search`（`:192`） | 请求中止（幂等） |
 | 23 | GET | `/api/connections/{connection_id}/text` | `read_text`（`:332`） | 读出文本供在线编辑（只读操作，不需要写权限） |
 | 24 | PUT | `/api/connections/{connection_id}/text` | `save_text`（`:346`） | 保存文本，带冲突检测（写操作） |
-| 25 | POST | `/api/connections/{connection_id}/rename` | `rename_entry`（`:394`） | 重命名条目（写操作） |
-| 26 | POST | `/api/connections/{connection_id}/delete` | `delete_entry`（`:407`） | 删除文件 / 目录（目录非空要显式递归） |
-| 27 | POST | `/api/connections/{connection_id}/compress` | `compress_entry`（`:424`） | 压缩成 `.tar.gz`（**201**） |
-| 28 | POST | `/api/connections/{connection_id}/extract` | `extract_entry`（`:440`） | 解压（**201**） |
-| 29 | GET | `/api/discovery` | `discovery_environment`（`:199`） | 这台机器上发现功能能读到什么（六个来源的状态与上限） |
-| 30 | POST | `/api/discovery/scan` | `start_discovery`（`:209`） | 开始扫描（**202**，后台线程里跑） |
-| 31 | GET | `/api/discovery/scans/{scan_id}` | `discovery_status`（`:220`） | 轮询扫描进度 / 取结果 |
-| 32 | DELETE | `/api/discovery/scans/{scan_id}` | `cancel_discovery`（`:224`） | 请求中止（幂等） |
+| 25 | POST | `/api/connections/{connection_id}/create` | `create_entry`（`:409`） | 新建空文件 / 空目录（**201**，排他创建） |
+| 26 | POST | `/api/connections/{connection_id}/copy` | `copy_entries`（`:432`） | 复制一批条目（**201**） |
+| 27 | POST | `/api/connections/{connection_id}/move` | `move_entries`（`:452`） | 移动一批条目 |
+| 28 | POST | `/api/connections/{connection_id}/rename` | `rename_entry`（`:465`） | 重命名条目（写操作） |
+| 29 | POST | `/api/connections/{connection_id}/delete` | `delete_entry`（`:478`） | 删除文件 / 目录 / 一批条目（目录非空要显式递归） |
+| 30 | POST | `/api/connections/{connection_id}/compress` | `compress_entry`（`:500`） | 压缩成一个 `.tar.gz`（**201**） |
+| 31 | POST | `/api/connections/{connection_id}/extract` | `extract_entry`（`:526`） | 解压一个或多个压缩包（**201**） |
+| 32 | GET | `/api/discovery` | `discovery_environment`（`:199`） | 这台机器上发现功能能读到什么（六个来源的状态与上限） |
+| 33 | POST | `/api/discovery/scan` | `start_discovery`（`:209`） | 开始扫描（**202**，后台线程里跑） |
+| 34 | GET | `/api/discovery/scans/{scan_id}` | `discovery_status`（`:220`） | 轮询扫描进度 / 取结果 |
+| 35 | DELETE | `/api/discovery/scans/{scan_id}` | `cancel_discovery`（`:224`） | 请求中止（幂等） |
 
-第 23~28 号是 v0.1.1 阶段四新增的写入口，全部受连接级 `allow_write` 开关约束（见 §7.2）；第 29~32 号是 v0.1.1 阶段五新增的在线虚拟机发现端点，**只读且与连接无关**——不读也不写任何连接配置、不建立 SSH 会话（见 §5.29–5.32 与 §7.4）。
+第 23~31 号是写入口，全部受连接级 `allow_write` 开关约束（见 §7.2）：23~24 是 v0.1.1 阶段四的文本编辑，25~31 是文件操作（其中 25~27 与 `paths`/批量扩展是 v0.1.3 阶段 A 新增的），第 28~31 号里 `delete`/`compress`/`extract` 在 v0.1.3 起**同时接受单条 `path` 与批量 `paths`**。第 32~35 号是 v0.1.1 阶段五新增的在线虚拟机发现端点，**只读且与连接无关**——不读也不写任何连接配置、不建立 SSH 会话（见 §5.32–5.35 与 §7.4）。
 
 以下所有示例都省略了请求头 `X-AWFM-Token`（除健康检查外都必须有），`connection_id` 一律用 `vm1`。
 
@@ -786,7 +789,76 @@ Content-Type: application/json
 - 界面拿返回的 `size` 与 `mtime` 刷新文件列表——保存成功后列表里的这两列必须跟着变，否则用户会以为没保存上。
 - 可能的错误：`invalid_request`（400，含形状与编码）、`unauthorized`（401：令牌或写权限）、`permission_denied`（403：文件本身没有写位，`extra.mode` 是当前的八进制权限）、`payload_too_large`（413）、`path_not_found`（404：保存时文件已被删除）、`edit_conflict`（409）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
 
-### 5.25 POST /api/connections/{connection_id}/rename
+### 5.25 POST /api/connections/{connection_id}/create
+
+在指定目录里新建一个**空文件**或一个**空目录**。请求体：
+
+```json
+{ "path": "/home/aimu", "name": "笔记 2026.txt", "kind": "file" }
+```
+
+- `path` 是**父目录**（不是新条目的完整路径）；`name` 是单个分量，按 `validate_remote_name`（`app/utils/paths.py`）校验：空串、`.`、`..`、含 `/` 或 NUL、超过 255 字节一律 `invalid_request`。`kind` 只接受 `"file"` 与 `"directory"`。
+- **排他创建，不「先查再建」**：文件用 `SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL` 打开后立即关闭（权限 `0644`），目录用 `MKDIR`（`0755`，`MKDIR` 本身排他）。两个并发的同名请求只可能有一个成功，**既不会静默覆盖已有内容，也不会因为两次 `stat` 之间被别人抢先而误报成功**。
+- 同名条目已经存在 → `invalid_request`（「同名条目已经存在。」，`extra.exists = true`，`extra.type` 是已有条目的类型，`extra.path` 是目标绝对路径）。这个判定来自**创建失败之后**的一次 `lstat` 复核，而不是创建前的预检。
+- `path` 不存在 → `path_not_found`；`path` 指向文件而不是目录 → `invalid_request`（「新建文件的目标不是目录。」/「新建文件夹的目标不是目录。」，`extra.path` 是解析后的路径）。
+- 需要写权限：连接级 `allow_write` 关闭时 → `unauthorized`（401），且远端一个字节都没动。
+
+成功（**201**）：
+
+```json
+{ "ok": true, "data": { "entry": { "path": "/home/aimu/笔记 2026.txt", "name": "笔记 2026.txt", "kind": "file", "type": "file", "size": 0, "mtime": 1792000123 } } }
+```
+
+- 新条目一定是 **0 字节**；界面只把这里的 201 当成「创建成功」，其后刷新目录失败要单独提示，不能反过来报成创建失败。
+- 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
+
+### 5.26 POST /api/connections/{connection_id}/copy
+
+把一批条目复制到另一个目录。请求体：
+
+```json
+{ "paths": ["/home/aimu/a.txt", "/home/aimu/docs"], "to": "/home/aimu/backup", "overwrite": false }
+```
+
+- `paths` 至少一项、最多 10000 项（`MAX_COPY_ENTRIES`），也接受单个 `path` 写法（与 `delete` 相同：有 `paths` 走批量）。`to` 必须是**已经存在的目录**——不会自动创建 → `invalid_request`（「复制的目标不是目录。」）。
+- 拒绝把条目放进它自己里面：`to` 就是源的父目录 → `invalid_request`（「源和目标在同一个位置，不需要复制。」）；`to` 在目录源的内部 → `invalid_request`（「不能把目录复制到它自己里面。」）。根目录不能作为源。
+- 同名冲突默认**整批拒绝**：`invalid_request`（「目标位置已经有同名条目。」，`extra.conflicts` 逐项给出 `{source, target, type}`，`extra.exists = true`）。`overwrite = true` 时逐项覆盖（同名目录按合并处理）。SFTP 层没有「原子复制」，所以「确认覆盖」必须由调用方显式给出，而不是服务端猜。
+- **符号链接不跟进去**：`skipped` 记 `{name, code: "symlink_skipped"}`，目标位置**不会**出现一个空文件冒充链接。
+- 上限：条目数 10000、原始字节 512 MiB（`MAX_COPY_BYTES`），超过即 `invalid_request`（`extra.limit`）；目录层级超过 `MAX_TREE_DEPTH` 也会停下报错。
+- 文件复制走「`download_chunks` 读块 → `upload_stream` 写块」，权限位按源条目的 `permissions & 0o777` 落地；目录按源的权限创建（缺省 `0755`）。
+- 需要写权限。
+
+成功（**201**）：
+
+```json
+{ "ok": true, "data": { "copy": { "destination": "/home/aimu/backup", "copied": [{ "source": "/home/aimu/a.txt", "path": "/home/aimu/backup/a.txt", "name": "a.txt" }], "files": 3, "directories": 2, "bytes": 4138, "skipped": [], "overwrite": false } } }
+```
+
+- `copied` 逐项给出源与目标的绝对路径；`files`/`directories`/`bytes` 是整批的合计。
+- 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
+
+### 5.27 POST /api/connections/{connection_id}/move
+
+把一批条目移动到另一个目录（远端 `RENAME`）。请求体：
+
+```json
+{ "paths": ["/home/aimu/a.txt"], "to": "/home/aimu/archive" }
+```
+
+- `to` 必须已经存在且是目录；同位置、移进目录自身内部这两条拒绝理由与复制（§5.26）完全一致。根目录不能作为源。
+- 目标已存在**一律拒绝**（`extra.conflicts` 同 §5.26）：SFTP v3 的 `RENAME` 本来就不覆盖已有目标，这里也不做「先复制再删」的折中——那会把一次原子改名退化成两步，中途失败就变成两份。
+- 逐项执行。某一项失败时前面的已经移走且**不回滚**，错误里 `extra.done` 是已完成的绝对路径、`extra.failed` 是卡住的那一项（与批量删除同一套部分失败语义）。
+- 需要写权限。
+
+成功（200）：
+
+```json
+{ "ok": true, "data": { "move": { "destination": "/home/aimu/archive", "moved": [{ "source": "/home/aimu/a.txt", "path": "/home/aimu/archive/a.txt", "name": "a.txt" }], "count": 1 } } }
+```
+
+- 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
+
+### 5.28 POST /api/connections/{connection_id}/rename
 
 重命名一个条目（文件、目录或符号链接）。请求体：
 
@@ -807,7 +879,7 @@ Content-Type: application/json
 
 - 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
 
-### 5.26 POST /api/connections/{connection_id}/delete
+### 5.29 POST /api/connections/{connection_id}/delete
 
 删除文件、符号链接或目录。请求体：
 
@@ -815,6 +887,9 @@ Content-Type: application/json
 { "path": "/home/aimu/old-notes", "recursive": false }
 ```
 
+- **v0.1.3 起也接受批量**：把 `path` 换成 `paths: ["/a", "/b"]`（至少一项），响应只在成功时多一层汇总：
+  `{ "deleted": [<单条结果的数组>], "count": 2, "files": 3, "directories": 1, "entries": 4, "recursive": false }`。单条写法与单条响应**一字未改**。
+- 批量是逐项删除、逐项记账：某一项失败时前面的**不回滚**，错误的 `extra.done` 是已删掉的路径列表、`extra.failed` 是卡住的那一项。
 - `recursive` 默认 `false`。目录非空且没有显式递归 → `invalid_request`（「目录不是空的，需要显式确认递归删除。」），**`extra.entries` 给出条目数**，界面拿它弹第二次确认。
 - 递归删除是深度优先的：读目录用的是 `lstat` 语义的条目属性，因此**符号链接不会被跟进去**；条目总数超过 10000 或层级超过 64 会**中途停下**并返回 400（`extra.removed` 说明已经删掉了多少）——一次请求不会无限制地删下去。
 - 删除符号链接只删链接本身，链接指向的文件/目录不受影响；根目录 → `invalid_request`（「不能删除根目录。」）。
@@ -828,7 +903,7 @@ Content-Type: application/json
 
 - 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
 
-### 5.27 POST /api/connections/{connection_id}/compress
+### 5.30 POST /api/connections/{connection_id}/compress
 
 把一个条目打包成 `.tar.gz`，放在它旁边。请求体：
 
@@ -836,6 +911,8 @@ Content-Type: application/json
 { "path": "/home/aimu/notes", "name": "" }
 ```
 
+- **v0.1.3 起也接受批量**：`{ "paths": ["/a", "/b"], "name": "pack", "into": "/home/aimu/out" }`，多个条目打进**同一个**压缩包。`name` 留空时单条目用条目名、多条用 `archive`；`into` 是压缩包要放进的目录（必须是已存在的目录），留空则放在**第一个源条目所在的目录**。
+- 成功响应在批量时多一个 `sources` 数组（逐个源条目的绝对路径），`source` 保留为第一项，单条写法的响应形状不变。
 - `name` 缺省时用条目自己的名字；没有 `.tar.gz`/`.tgz`/`.tar`/`.zip` 后缀会自动补 `.tar.gz`（本版只产出 `.tar.gz`）。名字同样按 `validate_remote_name` 校验。
 - 打包规则：GNU tar 格式；目录递归入包并保留相对路径；**符号链接以链接本身入包**（`readlink` 的目标写进 `linkname`，不展开目标内容）；其它特殊类型（设备、FIFO、socket）记进 `skipped` 并跳过。gzip 的 `mtime` 固定为 0，同样内容得到同样的字节。
 - 上限：10000 个条目、512 MiB 原始字节，超过即 `invalid_request`（`extra` 带 `limit`）。目标已存在 → `invalid_request`（`extra.exists = true`）。根目录不能压缩。
@@ -850,7 +927,7 @@ Content-Type: application/json
 `size` 是压缩包自身的大小，`bytes` 是原始数据合计。
 - 可能的错误：`invalid_request`（400）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502）、`timeout`（504）。
 
-### 5.28 POST /api/connections/{connection_id}/extract
+### 5.31 POST /api/connections/{connection_id}/extract
 
 解压一个压缩包。请求体：
 
@@ -858,6 +935,9 @@ Content-Type: application/json
 { "path": "/home/aimu/notes.tar.gz", "into": "/home/aimu/unpacked", "overwrite": false }
 ```
 
+- **v0.1.3 起也接受批量**：`paths: ["/a.tar.gz", "/b.zip"]`，逐个解压。**只有一个压缩包时响应与单条写法完全一致**；多个时返回汇总
+  `{ "archives": [<单条结果数组>], "count": 2, "entries": …, "files": …, "directories": …, "bytes": …, "stopped": null }`。
+  某一包失败时前面的不回滚，错误的 `extra.done` 是已解开的压缩包路径、`extra.failed` 是挡住的那一包。
 - 支持 `.tar.gz`、`.tgz`、`.tar`、`.zip`；其它后缀 → `invalid_request`（「这个文件不是支持的压缩包。」）。
 - `into` 缺省是压缩包所在的目录。目标目录不存在时会**只创建最后一级**（多级路径写错不会被静默造出来）；目标存在但不是目录 → `invalid_request`（「解压目标不是目录。」）。
 - `overwrite` 默认 `false`：目标已存在的文件会被跳过，名字列在 `existing` 里（界面提示「已跳过 N 个」）；同名**目录**与文件冲突 → `invalid_request`；`overwrite = true` 时先删再写。
@@ -892,7 +972,7 @@ Content-Type: application/json
 
 - 可能的错误：`invalid_request`（400，含成员越界与上限）、`unauthorized`（401）、`path_not_found`（404）、`permission_denied`（403）、`payload_too_large`（413，压缩包自身过大）、`session_not_found`（404）、`not_connected`（409）、`remote_error`/`protocol_error`（502，含「解压写出的字节数与压缩包记录不一致」）、`timeout`（504）。
 
-### 5.29 GET /api/discovery
+### 5.32 GET /api/discovery
 
 这台机器上「发现」能读到什么。**不读大文件、也不探测**，只回答环境与上限，所以页面加载时就可以先调它来决定扫描入口是否可用。
 
@@ -940,13 +1020,13 @@ Content-Type: application/json
 
 - 六个来源的名字固定为 `inventory`、`vmrun`、`vmnet`、`lease`、`neighbor`、`process`，顺序固定。`state` 取值：`ok`（读得到）/ `empty`（读了，里面没有内容）/ `missing`（文件不在磁盘上）/ `unavailable`（这台机器上读不到，例如非 Windows 读邻居表，或压根没装 VMware）/ `denied`（权限不够）/ `error`（读了但出错）。
 - `process` **恒为 `denied`**：非管理员读不到 `vmware-vmx.exe` 的命令行（实测如此），所以运行状态一律改由 `vmrun list` 判断。这一项留在表里，是为了如实说明「有件事我们没读到，以及为什么」。
-- `limits` 里的七个值就是 §5.30 那次扫描会用到的上限；`enabled` 为 `false` 时应直接把扫描入口禁用。
+- `limits` 里的七个值就是 §5.33 那次扫描会用到的上限；`enabled` 为 `false` 时应直接把扫描入口禁用。
 - 不需要任何连接，也不要求已连接。
 - 可能的错误：`unauthorized`（401）。
 
-### 5.30 POST /api/discovery/scan
+### 5.33 POST /api/discovery/scan
 
-开始扫描。**异步**：立刻返回一个扫描快照，真正的读取与探测跑在后台线程里，之后用 §5.31 轮询。
+开始扫描。**异步**：立刻返回一个扫描快照，真正的读取与探测跑在后台线程里，之后用 §5.34 轮询。
 
 无请求体。
 
@@ -961,7 +1041,7 @@ Content-Type: application/json
 - 不读也不写连接表，不建立 SSH 会话。
 - 可能的错误：`unauthorized`（401）、`invalid_request`（400）、`discovery_busy`（409）。
 
-### 5.31 GET /api/discovery/scans/{scan_id}
+### 5.34 GET /api/discovery/scans/{scan_id}
 
 轮询进度与结果。`scan_id` 的形状是 12 位小写十六进制，其它形状根本走不到处理器（一律 404）。
 
@@ -997,7 +1077,7 @@ Content-Type: application/json
 
 - 可能的错误：`unauthorized`（401）、`path_not_found`（404，扫描不存在或已过期——只保留最近若干次）。
 
-### 5.32 DELETE /api/discovery/scans/{scan_id}
+### 5.35 DELETE /api/discovery/scans/{scan_id}
 
 请求中止扫描。**幂等**：已经在收尾的扫描再 DELETE 一次也不报错。
 
@@ -1040,19 +1120,21 @@ Content-Type: application/json
 
 ### 7.1 版本
 
-- 应用版本在 `app/__init__.py:7`（当前 `0.1.0`），通过 `Server` 响应头与 `GET /api/health`、`GET /api/session` 暴露。API 路径**不带版本前缀**——这是本地单用户服务，前后端同版本发布、同一次启动一起加载（前端资源由同一个进程提供），因此不需要 URL 版本协商。
+- 应用版本在 `app/__init__.py:7`（v0.1.3 起为 `0.1.3`），通过 `Server` 响应头与 `GET /api/health`、`GET /api/session` 暴露。API 路径**不带版本前缀**——这是本地单用户服务，前后端同版本发布、同一次启动一起加载（前端资源由同一个进程提供），因此不需要 URL 版本协商。
 - 配置文件有自己的版本号：`CONFIG_VERSION = 1`（`app/core/config.py` 的 `DEFAULTS["config_version"]`）。读到**更高版本**的配置文件会拒绝启动，而不是猜测字段含义；配置损坏时同样报 `config_error`，**绝不静默重置**（决策 D-006）。
 - 前端在启动时先调 `GET /api/session`，可以据此判断服务能力（例如 `max_upload_bytes`、`max_download_bytes`、`host_key_policy`），比硬编码版本号更稳。
-- **v0.1.1 开发中**：本版本在 v0.1.0 之上增加了远端文件检索（第 20~22 号端点）、在线编辑与文件操作（第 23~28 号端点）、在线虚拟机发现（第 29~32 号端点）。`app/__init__.py` 里的版本号目前仍是 `0.1.0`，待阶段六交付时统一改为 `0.1.1` 并重新打包；端点路径、响应信封与既有端点的行为都不变（纯新增）。
+- **v0.1.1 引入的端点**：远端文件检索（第 20~22 号）、在线编辑与文件操作（第 23~28 号）、在线虚拟机发现（第 29~32 号），v0.1.2 未增删。
+- **v0.1.3 新增的端点**（第 25~27 号，插在文件操作组内）：`create`（新建空文件 / 空目录）、`copy`（复制一批条目）、`move`（移动一批条目）；同时 `delete`、`compress`、`extract` 三个既有端点**兼容地**接受了批量 `paths`，`compress` 多一个 `into`。单条的 `path` 写法、响应键名与状态码全部保持不变（§5.25~§5.31）。
 - **v0.1.1 新增的配置键**：`security.max_edit_bytes`（默认 `2097152`，即 2 MiB，允许 1024 ~ 64 MiB）。它同时出现在 `GET /api/session` 的返回里；在线编辑的读与写都按它设上限，**服务端是唯一权威**（前端只用来提示）。阶段五又加了 `discovery` 段九个键（`enabled`、`probe_ssh`、`probe_timeout_seconds`、`max_probe_workers`、`max_addresses_per_subnet`、`max_probes`、`time_budget_seconds`、`vmware_root`、`vmware_data_dir`），默认值与取值范围见 `config/config.example.json` 与用户手册 §10.2。
 
 ### 7.2 写操作的分级与门禁
 
-v0.1.1 阶段四把「远端文本编辑 + 压缩 / 重命名 / 解压 / 删除」做成了端点，但暴露的是**语义化操作**，不是 SFTP 原语：
+v0.1.1 阶段四把「远端文本编辑 + 压缩 / 重命名 / 解压 / 删除」做成了端点，v0.1.3 又补上「新建 / 复制 / 移动」与批量版本，但暴露的一直是**语义化操作**，不是 SFTP 原语：
 
-- **HTTP 上的写入口**（第 24~28 号，加上第 18 号上传）：`PUT …/text`、`rename`、`delete`、`compress`、`extract`、`upload`。每个入口只做「形状检查 → 取会话 → 调服务层 → 包响应」，规则都写在服务层里（`app/services/editor.py`、`app/services/fileops.py`、`app/services/transfer.py`）。
-- **SFTP 原语仍然没有直接的 HTTP 出口**：`mkdir` / `rmdir` / `remove` / `rename`（`app/ssh/sftp_client.py`）只被服务层调用；`open_write` 只出现在保存文本、压缩、解压三处。
-- **唯一没有对应端点的是 `mkdir`**：它只在解压目标目录不存在时被用来建**最后一级**目录，路径写错不会被静默造出一串空目录。
+- **HTTP 上的写入口**（第 24~31 号，加上第 18 号上传）：`PUT …/text`、`create`、`copy`、`move`、`rename`、`delete`、`compress`、`extract`、`upload`。每个入口只做「形状检查 → 取会话 → 调服务层 → 包响应」，规则都写在服务层里（`app/services/editor.py`、`app/services/fileops.py`、`app/services/transfer.py`）。
+- **SFTP 原语仍然没有直接的 HTTP 出口**：`mkdir` / `rmdir` / `remove` / `rename` / `open`（`app/ssh/sftp_client.py`）只被服务层调用；`open_write` 出现在保存文本、压缩、解压三处，`open` 只出现在新建文件那一处。
+- **`mkdir` 现在有两个调用者**：解压时建目标目录的最后一级，以及 `/create`（`kind = "directory"`）。两处都只建**一级**目录，路径写错不会被静默造出一串空目录。
+- **新建文件用排他打开（`SSH_FXF_CREAT | SSH_FXF_EXCL`）而不是「先查再建」**：两次系统调用之间被别人抢先是并发下真实存在的窗口，先 `stat` 再 `create` 会把这个窗口变成一次**静默覆盖**。现在的写法让第二个请求直接失败，再用一次 `lstat` 把失败翻译成「同名条目已经存在」。
 
 三道门禁，缺一不可：
 
@@ -1071,7 +1153,7 @@ v0.1.1 阶段四把「远端文本编辑 + 压缩 / 重命名 / 解压 / 删除�
 
 ### 7.4 在线虚拟机发现读什么、不读什么
 
-第 29~32 号端点是 AWFM 里**唯一会自己往外连**的功能：要连的地址不是用户填的，而是从这台机器的 VMware 状态里读出来的。因此它的边界比别的入口都紧：
+第 32~35 号端点是 AWFM 里**唯一会自己往外连**的功能：要连的地址不是用户填的，而是从这台机器的 VMware 状态里读出来的。因此它的边界比别的入口都紧：
 
 - **只读本地那几样东西**：VMware 的清单文件（`inventory.vmls`）、`vmrun list`（运行状态）、虚拟机的 `.vmx`（名称、客户机类型、网卡 MAC）、`vmnetdhcp.conf` 与 `vmnetdhcp.leases`（虚拟网段与地址历史）、系统邻居表（`Get-NetNeighbor`，失败时回退 `arp -a`）。
 - **只探测已知虚拟网段**：候选地址必须先落在 `vmnetdhcp.conf` 声明的网段之内（本机是 `192.168.11.0/24` 与 `192.168.170.0/24`）。公网地址、本机虚拟网卡地址、网关地址一律不探。

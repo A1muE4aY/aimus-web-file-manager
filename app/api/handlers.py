@@ -393,6 +393,75 @@ def save_text(ctx, req: ApiRequest, connection_id: str) -> None:
 # --------------------------------------------------------------------- 文件操作
 
 
+def _payload_paths(payload: dict) -> list[str] | None:
+    """读取可选的 paths 数组（批量操作用）。没给就返回 None，交给单条 path 分支。"""
+    value = payload.get("paths")
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        raise ValidationError("paths 必须是非空数组。")
+    for item in value:
+        if not isinstance(item, str) or not item:
+            raise ValidationError("paths 里每一项都必须是非空字符串。")
+    return list(value)
+
+
+def create_entry(ctx, req: ApiRequest, connection_id: str) -> None:
+    """在远端目录里新建空文件或空文件夹。
+
+    排他与权限都在服务端重新确认（见 app/services/fileops.py 的 create_entry）：
+    界面上按钮是否可用只是提示，绕过界面直接打接口一样会被拒绝。
+    """
+    payload = req.json()
+    path = payload.get("path")
+    name = payload.get("name")
+    kind = payload.get("kind", "file")
+    if not isinstance(path, str) or not path:
+        raise ValidationError("缺少 path（要在哪个目录里新建）。")
+    if not isinstance(name, str):
+        raise ValidationError("缺少 name（新条目的名字）。")
+    if kind not in ("file", "directory"):
+        raise ValidationError(
+            "kind 只允许 file 或 directory。",
+            detail="file 表示新建文件，directory 表示新建文件夹。",
+        )
+    session = _session(ctx, connection_id)
+    send_ok(req.handler, {"entry": fileops.create_entry(session, path, name, kind=kind)}, status=201)
+
+
+def copy_entries(ctx, req: ApiRequest, connection_id: str) -> None:
+    """把若干条目复制到目标目录（同名默认拒绝）。"""
+    payload = req.json()
+    paths = _payload_paths(payload)
+    to = payload.get("to")
+    overwrite = payload.get("overwrite", False)
+    if paths is None:
+        raise ValidationError("缺少 paths（要复制哪些条目）。")
+    if not isinstance(to, str) or not to:
+        raise ValidationError("缺少 to（复制到哪个目录）。")
+    if not isinstance(overwrite, bool):
+        raise ValidationError("overwrite 必须是布尔值。")
+    session = _session(ctx, connection_id)
+    send_ok(
+        req.handler,
+        {"copy": fileops.copy_entries(session, paths, to, overwrite=overwrite)},
+        status=201,
+    )
+
+
+def move_entries(ctx, req: ApiRequest, connection_id: str) -> None:
+    """把若干条目移动到目标目录（同名一律拒绝）。"""
+    payload = req.json()
+    paths = _payload_paths(payload)
+    to = payload.get("to")
+    if paths is None:
+        raise ValidationError("缺少 paths（要移动哪些条目）。")
+    if not isinstance(to, str) or not to:
+        raise ValidationError("缺少 to（移动到哪个目录）。")
+    session = _session(ctx, connection_id)
+    send_ok(req.handler, {"move": fileops.move_entries(session, paths, to)})
+
+
 def rename_entry(ctx, req: ApiRequest, connection_id: str) -> None:
     """重命名：只改同一目录内的名字，不做跨目录移动。"""
     payload = req.json()
@@ -407,19 +476,27 @@ def rename_entry(ctx, req: ApiRequest, connection_id: str) -> None:
 
 
 def delete_entry(ctx, req: ApiRequest, connection_id: str) -> None:
-    """删除文件、符号链接或目录。
+    """删除文件、符号链接或目录（支持一次删多项）。
 
     recursive 必须由调用方显式给出 —— 目录非空而没带它时服务端拒绝执行：
     这是删除这类不可撤销操作的兜底，界面上漏了一次确认，服务端还有一道。
+    多项删除按顺序执行，失败时错误里带着已删掉的清单（见 fileops.delete_entries）。
     """
     payload = req.json()
-    path = payload.get("path")
+    paths = _payload_paths(payload)
     recursive = payload.get("recursive", False)
-    if not isinstance(path, str) or not path:
-        raise ValidationError("缺少 path。")
     if not isinstance(recursive, bool):
         raise ValidationError("recursive 必须是布尔值。")
+    # 形状检查必须在找会话之前：畸形请求不该因为「没连上」变成 404，
+    # 否则调用方会以为是自己连错了，而不是请求写错了。
+    if paths is None:
+        path = payload.get("path")
+        if not isinstance(path, str) or not path:
+            raise ValidationError("缺少 path。")
     session = _session(ctx, connection_id)
+    if paths is not None:
+        send_ok(req.handler, {"deleted": fileops.delete_entries(session, paths, recursive=recursive)})
+        return
     send_ok(req.handler, {"deleted": fileops.delete_entry(session, path, recursive=recursive)})
 
 
@@ -429,14 +506,24 @@ def compress_entry(ctx, req: ApiRequest, connection_id: str) -> None:
     压缩在 AWFM 进程里做、字节流走 SFTP 写回，不为它在远端执行任何命令（T-013）。
     """
     payload = req.json()
-    path = payload.get("path")
+    paths = _payload_paths(payload)
     name = payload.get("name", "")
-    if not isinstance(path, str) or not path:
-        raise ValidationError("缺少 path。")
+    into = payload.get("into", "")
     if not isinstance(name, str):
         raise ValidationError("name 必须是字符串。")
+    if not isinstance(into, str):
+        raise ValidationError("into 必须是字符串。")
+    if paths is None:
+        path = payload.get("path")
+        if not isinstance(path, str) or not path:
+            raise ValidationError("缺少 path。")
+        paths = [path]
     session = _session(ctx, connection_id)
-    send_ok(req.handler, {"archive": fileops.compress_entry(session, path, name=name)}, status=201)
+    send_ok(
+        req.handler,
+        {"archive": fileops.compress_entries(session, paths, name=name, into=into)},
+        status=201,
+    )
 
 
 def extract_entry(ctx, req: ApiRequest, connection_id: str) -> None:
@@ -445,19 +532,22 @@ def extract_entry(ctx, req: ApiRequest, connection_id: str) -> None:
     tar.gz / tar / zip 都在 Python 侧解析与写出，同样不碰远端命令。
     """
     payload = req.json()
-    path = payload.get("path")
+    paths = _payload_paths(payload)
     into = payload.get("into", "")
     overwrite = payload.get("overwrite", False)
-    if not isinstance(path, str) or not path:
-        raise ValidationError("缺少 path。")
     if not isinstance(into, str):
         raise ValidationError("into 必须是字符串。")
     if not isinstance(overwrite, bool):
         raise ValidationError("overwrite 必须是布尔值。")
+    if paths is None:
+        path = payload.get("path")
+        if not isinstance(path, str) or not path:
+            raise ValidationError("缺少 path。")
+        paths = [path]
     session = _session(ctx, connection_id)
     send_ok(
         req.handler,
-        {"extract": fileops.extract_entry(session, path, into=into, overwrite=overwrite)},
+        {"extract": fileops.extract_entries(session, paths, into=into, overwrite=overwrite)},
         status=201,
     )
 
@@ -496,6 +586,9 @@ ENDPOINTS: list[tuple[str, str, Any]] = [
     ("DELETE", r"/api/searches/(?P<search_id>[0-9a-f]+)", cancel_search),
     ("GET", r"/api/connections/(?P<connection_id>[^/]+)/text", read_text),
     ("PUT", r"/api/connections/(?P<connection_id>[^/]+)/text", save_text),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/create", create_entry),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/copy", copy_entries),
+    ("POST", r"/api/connections/(?P<connection_id>[^/]+)/move", move_entries),
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/rename", rename_entry),
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/delete", delete_entry),
     ("POST", r"/api/connections/(?P<connection_id>[^/]+)/compress", compress_entry),
