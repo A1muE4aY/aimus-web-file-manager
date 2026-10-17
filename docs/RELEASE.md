@@ -64,11 +64,11 @@ python scripts\package.py
 → 以**固定时间戳**（1980-01-01）压缩成 zip（所以同样的输入能产出同样的字节）→ 用 `testzip()` 校验 CRC
 → 逐个文件比对其 SHA-256 与清单一致 → 检查有无清单外的成员。
 
-> **数字口径**：本节与下一节的数字来自 **v0.1.3 交付后的最终构建记录**（2026-10-17 15:43，构建主机 Python 3.12.10；同一交付内先后构建过多次，每次的数字与哈希差异见 `docs/CHANGELOG.md` 的 v0.1.3 段）。本节记录的是**产出这份 zip 的那次构建**；由于 `docs/` 本身也在包里，文档要记录包自身的字节数与哈希就无法与自身完全闭合——最新一次构建的哈希以**包外**的 `dist/SHA256SUMS.txt` 为准；
+> **数字口径**：本节与下一节的数字来自 **v0.1.3 交付后的最终构建记录**（2026-10-17 20:52，构建主机 Python 3.12.10；同一交付内先后构建过多次，每次的数字与哈希差异见 `docs/CHANGELOG.md` 的 v0.1.3 段）。本节记录的是**产出这份 zip 的那次构建**；由于 `docs/` 本身也在包里，文档要记录包自身的字节数与哈希就无法与自身完全闭合——最新一次构建的哈希以**包外**的 `dist/SHA256SUMS.txt` 为准；
 脚本引用（`run.bat` / `run.sh` / `run-advanced.bat` / `run-advanced.sh` / `scripts/launcher.py`）与仓库当前结构一致。
 
 压缩包内共 **111 个文件**：清单 `MANIFEST.json` 的 `file_count` 是 **110**（清单不登记自身），加上 `MANIFEST.json` 自身正好 111；zip 成员数同为 111。包内没有 `data/`、`logs/`、`dist/`：它们是运行时目录，只在首次启动后由程序自己创建。
-目录树合计 **1,751,003 字节**（约 1.67 MiB），zip 压缩后 **723,835 字节**（706.9 KB）。
+目录树合计 **1,768,120 字节**（约 1.69 MiB），zip 压缩后 **730,323 字节**（713.2 KB）。
 所有成员名统一带一层 `AWFM-0.1.3-windows-x64/` 前缀——解压时不会把 `app/`、`frontend/`、`docs/` 散落到当前目录，目录结构与本文第 2 节的树完全一致。
 （v0.1.2 的包是 104 个文件 / 1,519,434 字节 / zip 631,659 字节；v0.1.3 的增量来自新增的 `run-advanced.bat`、`run-advanced.sh`、`tests/unit/test_frontend_layout.py` 与界面/接口改动带来的源码增长——测试文件本身不进包，进包增长主要来自 `frontend/`、`app/` 与 `docs/`。第二次构建相对第一次多了 `docs/reports/PHASE-D-RELEASE-v013.md`（18 KB）与 `frontend/assets/css/app.css` 的对齐修复注释。）
 
@@ -76,7 +76,7 @@ python scripts\package.py
 
 `dist/SHA256SUMS.txt`（**不在包内**）记录本次构建的：
 
-- 便携包 `AWFM-0.1.3-windows-x64.zip` 的 SHA-256（本次构建：`016260006d05130175ed8e42bbf4d3969913e1163c6b8b1821c27d0c8dc98e5e`；`Get-FileHash` 得 `01626000…98E5E`、`certutil` 得小写同值，双工具一致）；
+- 便携包 `AWFM-0.1.3-windows-x64.zip` 的 SHA-256（本次构建：`0631ed5e9f00821c3388d6580d461300a908df61e03c783236e5407a2e096c6f`；`Get-FileHash` 得 `0631ED5E…96C6F`、`certutil` 得小写同值，双工具一致）；
 - 清单 `MANIFEST.json` 的 SHA-256；
 - 两种校验方式：`certutil -hashfile <文件> SHA256` 或 `Get-FileHash -Algorithm SHA256`。
 
@@ -97,7 +97,7 @@ certutil -hashfile dist\AWFM-0.1.3-windows-x64.zip SHA256
 
 1. 解压 zip 到任意可写目录（路径**可以含空格**：v0.1.3 阶段 D 按含空格目录做过真实验收；仍建议避开中文路径）；
 2. 双击 `run.bat` 即启动：查环境 → 起服务 → 等 `/api/health` 通过 → **就绪后**用系统默认浏览器打开地址 →
-   打印地址、日志位置与停止方法，最后按一次回车关掉窗口（关窗口不影响后台服务）。
+   打印地址、日志位置与停止方法，然后**停在窗口里**：按 Ctrl+C 停止服务，直接关窗口则服务继续在后台跑。
    Linux / macOS 把 `run.bat` 换成 `./run.sh`；
 3. 想用交互菜单（启动 / 状态 / 停止 / 日志 / 自检）就双击 `run-advanced.bat`（Linux / macOS：`./run-advanced.sh`）；
    带参数时两个入口完全等价，例如 `run.bat status`、`run-advanced.bat start --port 32611`；

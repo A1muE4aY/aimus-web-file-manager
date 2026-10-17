@@ -26,7 +26,7 @@
 | `.temp/` | 草稿 | 会话中转；可随时整体清空 |
 | `.archive/` | 归档 | 本项目的 `duplicates/ deps/ junk/ misc/`；**只进不出** |
 | `README.md` `AGENTS.md` `.gitignore` `.gitattributes` | 根文件 | 允许（`.gitattributes` 钉仓库内行尾为 LF：`scripts/testbed_wsl.sh` 在 WSL 里执行，CRLF 会让 shebang 与续行报 `\r: command not found`） |
-| `run.bat` `run.sh` `run-advanced.bat` `run-advanced.sh` | 源码 | 启动入口（v0.1.3 §5）：**启动**入口 `run.bat`/`run.sh` 不带参数即启动（查环境 → 起服务 → 就绪后开浏览器）；**菜单**入口 `run-advanced.bat`/`run-advanced.sh` 不带参数进交互菜单。四者都只做「找 Python → 转交 `scripts/launcher.py`」，实现只有一份 |
+| `run.bat` `run.sh` `run-advanced.bat` `run-advanced.sh` | 源码 | 启动入口（v0.1.3 §5）：**启动**入口 `run.bat`/`run.sh` 不带参数即启动（查环境 → 起服务 → 就绪后开浏览器 → 窗口留在前台，按 Ctrl+C 停止服务；直接关窗口则服务继续在后台跑；`run.bat` 用 `start /b` 交棒，避免 cmd 的 `Terminate batch job` 询问）；**菜单**入口 `run-advanced.bat`/`run-advanced.sh` 不带参数进交互菜单。四者都只做「找 Python → 转交 `scripts/launcher.py`」，实现只有一份 |
 | `dev_guide/` | 用户输入 | 规划文档与接力任务书，**只读、保持原名原位置不动**（2026-10-17 由用户从根目录 `0.md` `1.md` `2.md` 迁入） |
 
 ## 3. 例外与纪律

@@ -524,22 +524,72 @@ def open_default_browser(url: str) -> tuple:
     return False, "没有图形环境，也找不到 xdg-open / gio / sensible-browser"
 
 
+def enable_console_ctrl_c() -> None:
+    """把「忽略 Ctrl+C」的标志清掉，让 Ctrl+C 真的能到达本进程。
+
+    run.bat 不带参数时用 start /b 把启动器交给它自己占住控制台（这样批处理可以先
+    退出，Ctrl+C 不会被 cmd.exe 拦下来问「Terminate batch job (Y/N)?」）。代价是
+    start 拉起的进程带着「忽略 Ctrl+C」标志，必须自己清掉，否则按 Ctrl+C 毫无反应。
+    没有控制台（管道、计划任务、输出重定向）时调用失败也没有副作用。
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(None, False)
+    except Exception:  # noqa: BLE001 - 拿不到控制台不该影响启动
+        pass
+
+
+def is_interactive_console() -> bool:
+    """标准输入是不是真的终端。管道、计划任务、输出重定向都不算。"""
+    try:
+        return bool(sys.stdin and sys.stdin.isatty())
+    except (AttributeError, ValueError):
+        return False
+
+
 def pause_before_close() -> None:
-    """出错或需要用户读完地址时，别让窗口一闪而过（run.bat 里也有同样的等待）。
+    """启动失败时，别让窗口一闪而过，让人看清原因（run.bat 里也有同样的等待）。
 
     自动化脚本里设 AWFM_NO_PAUSE=1 跳过；非交互（没有 TTY）时也不会挂住。
     """
-    if os.environ.get("AWFM_NO_PAUSE"):
-        return
-    try:
-        if not (sys.stdin and sys.stdin.isatty()):
-            return
-    except (AttributeError, ValueError):
+    if os.environ.get("AWFM_NO_PAUSE") or not is_interactive_console():
         return
     try:
         input("  按回车键关闭这个窗口……")
     except (EOFError, KeyboardInterrupt):
         say("")
+
+
+def hold_console(args: argparse.Namespace) -> int:
+    """启动成功后把窗口留在前台：按 Ctrl+C 停止服务，关窗口则服务继续在后台跑。
+
+    规则（v0.1.3 第四轮）：
+    - 窗口不再「按回车键关闭」——回车只是让窗口消失，后台服务照跑，用户反而
+      找不到停止的入口；这里改成停住不动，Ctrl+C 才停服务。
+    - Ctrl+C 不再让 Python 抛栈，而是复用 cmd_stop 的同一套逻辑（优雅停止 →
+      超时后强制终止、清理 PID 文件、端口检查），因此「按 Ctrl+C」与
+      「run.bat stop --force --yes」结果一致。
+    - 非交互（AWFM_NO_PAUSE=1、没有终端、输出被重定向到管道）直接返回，
+      绝不挂住自动化脚本。
+    """
+    if os.environ.get("AWFM_NO_PAUSE") or not is_interactive_console():
+        return EXIT_OK
+    say("")
+    field("停止", "按 Ctrl+C 停止服务；直接关闭本窗口，服务继续在后台运行")
+    try:
+        while True:
+            time.sleep(0.4)
+    except KeyboardInterrupt:
+        pass
+    say("")
+    info("收到 Ctrl+C，正在停止服务。")
+    stop_args = argparse.Namespace(**vars(args))
+    stop_args.force = True      # 用户已经明确要求停止，不再追问「要不要强制」
+    stop_args.yes = True
+    stop_args.timeout = DEFAULT_STOP_TIMEOUT
+    return cmd_stop(stop_args)
 
 
 def report_started(settings: dict, pid: int, console_log: Path, version: str) -> None:
@@ -647,11 +697,12 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 
 def cmd_quick(args: argparse.Namespace) -> int:
-    """启动（任务书 §5）：双击一次就能用。
+    """启动（任务书 §5）：双击一次就能用，窗口留在前台，Ctrl+C 停止服务。
 
     顺序刻意固定：查环境（在 cmd_start 里）→ 拒绝重复启动 → 等 /api/health 真的通过
-    → 才用系统默认浏览器打开。浏览器打不开只影响「有没有自动弹窗」，不影响服务本身，
-    所以这里不改退出码，只把窗口留住让人看清地址。
+    → 才用系统默认浏览器打开 → 窗口停住（hold_console）：按 Ctrl+C 停止服务，
+    直接关窗口则服务继续在后台跑。浏览器打不开只影响「有没有自动弹窗」，
+    不影响服务本身，所以这里不改退出码。
     """
     version = local_version()
     say("AWFM" + (" " + version if version else ""))
@@ -666,8 +717,7 @@ def cmd_quick(args: argparse.Namespace) -> int:
         else:
             warn("没能自动打开浏览器（" + detail + "）。")
             say("       请手动在浏览器里打开上面的地址。")
-        pause_before_close()
-        return EXIT_OK
+        return hold_console(args)
 
     code = cmd_start(args)
     if code != EXIT_OK:
@@ -676,11 +726,11 @@ def cmd_quick(args: argparse.Namespace) -> int:
             say("")
             fail("启动没有成功，按上面的提示处理后重试。")
             field("输出", short_path(Path(args.console_log)))
-        pause_before_close()
+        # 窗口要不要留住由 main() 统一决定：run.bat 走的是 start /b 交棒，
+        # 批处理已经退出，停窗口只能靠这里（见 main 里的 quick 分支）。
         return code
 
-    pause_before_close()
-    return EXIT_OK
+    return hold_console(args)
 
 
 def run_foreground(settings: dict, console_log: Path, extra_args: list, pid_file: Path) -> int:
@@ -831,15 +881,23 @@ def cmd_stop(args: argparse.Namespace) -> int:
         return EXIT_FAILED
 
     say("正在停止 AWFM（PID " + str(pid) + "）……")
-    say("        " + graceful_stop(pid))
-    if wait_process_gone(pid, float(args.timeout)):
+    message = graceful_stop(pid)
+    say("         " + message)
+    # Windows 上后台服务是 DETACHED_PROCESS，没有控制台窗口，taskkill /PID … /T
+    # 不带 /F 必然被拒绝。既然请求根本没送到，再等一班只会让「停止」白等 10 秒，
+    # 所以这里直接进入强制终止（仍然遵循 --force / 确认规则）。
+    requested = not message.startswith("进程没有窗口")
+    if wait_process_gone(pid, float(args.timeout) if requested else 0.0):
         remove_pid_file(pid_file)
         if port_busy(state["host"], state["port"]):
             warn("进程已经退出，但端口 " + str(state["port"]) + " 还在被占用（可能是别的程序）。")
         ok("AWFM 已停止。")
         return EXIT_OK
 
-    warn("进程没有在 " + ("%g" % float(args.timeout)) + " 秒内退出。")
+    if requested:
+        warn("进程没有在 " + ("%g" % float(args.timeout)) + " 秒内退出。")
+    else:
+        info("进程没有窗口，收不到关闭请求，直接强制终止。")
     allowed = args.force or confirm("强制终止 PID " + str(pid) + " 及其子进程？", assume_yes=args.yes)
     if not allowed:
         fail("已放弃，没有做任何强制操作。")
@@ -1125,6 +1183,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list | None = None) -> int:
     pin_console_encoding()
+    enable_console_ctrl_c()
     raw = list(sys.argv[1:] if argv is None else argv)
     # 不带任何参数 = 启动（v0.1.3 §5）：run.bat / run.sh 双击就是这条路。
     if not raw:
@@ -1158,16 +1217,21 @@ def main(argv: list | None = None) -> int:
         print_usage()
         return EXIT_OK
     try:
-        return handlers[args.command](args)
+        code = handlers[args.command](args)
     except LauncherError as exc:
         fail(exc.message)
         if exc.hint:
             say("  " + exc.hint)
-        return EXIT_FAILED
+        code = EXIT_FAILED
     except KeyboardInterrupt:
         say("")
         info("已中断。")
-        return EXIT_FAILED
+        code = EXIT_FAILED
+    # 启动（quick）失败时窗口要留住：run.bat 已经把控制台交给启动器（start /b），
+    # 批处理自己那个 pause 不会再执行，所以由这里补上同样的等待。
+    if code != EXIT_OK and args.command == "quick":
+        pause_before_close()
+    return code
 
 
 if __name__ == "__main__":

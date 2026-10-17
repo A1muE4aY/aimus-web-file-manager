@@ -531,6 +531,7 @@ class QuickStartTest(unittest.TestCase):
             mock.patch.object(launcher, "current_state", side_effect=self._state),
             mock.patch.object(launcher, "open_default_browser", side_effect=self._browser),
             mock.patch.object(launcher, "pause_before_close", side_effect=lambda: self.events.append("pause")),
+            mock.patch.object(launcher, "hold_console", side_effect=lambda args: self.events.append("hold") or launcher.EXIT_OK),
             mock.patch.object(launcher, "cmd_start", side_effect=lambda args: self._start()),
         ]
         for patcher in patchers:
@@ -566,6 +567,7 @@ class QuickStartTest(unittest.TestCase):
         self.assertIn("已经在运行", text)
         self.assertIn("http://127.0.0.1:32579/", text)
         self.assertIn("browser", self.events)
+        self.assertIn("hold", self.events)  # 窗口留在前台，Ctrl+C 才能停服务
         self.assertNotIn("start", self.events)  # 不会起第二个实例
 
     def test_already_running_without_a_browser_keeps_the_window(self):
@@ -576,9 +578,11 @@ class QuickStartTest(unittest.TestCase):
             code = launcher.cmd_quick(self._args())
         self.assertEqual(code, launcher.EXIT_OK)
         self.assertIn("手动在浏览器里打开", buffer.getvalue())
-        self.assertIn("pause", self.events)
+        self.assertIn("hold", self.events)
 
-    def test_failed_start_explains_itself_and_keeps_the_window(self):
+    def test_failed_start_explains_itself_and_leaves_the_wait_to_main(self):
+        # run.bat 已经用 start /b 交棒，批处理自己的 pause 不会执行了：
+        # 「留住窗口」改由 main() 统一负责，cmd_quick 只把原因说清楚。
         self.start_code = launcher.EXIT_FAILED
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
@@ -587,10 +591,10 @@ class QuickStartTest(unittest.TestCase):
         self.assertEqual(code, launcher.EXIT_FAILED)
         self.assertIn("启动没有成功", text)
         self.assertIn("输出", text)
-        self.assertIn("pause", self.events)
+        self.assertNotIn("pause", self.events)
 
-    def test_successful_start_prints_the_banner_and_keeps_the_window(self):
-        # 启动报告由 cmd_start 打印（这里被 mock 掉），quick 只负责横幅和「看完再关窗口」。
+    def test_successful_start_prints_the_banner_and_hands_the_window_to_ctrl_c(self):
+        # 启动报告由 cmd_start 打印（这里被 mock 掉），quick 只负责横幅和「把窗口留在前台」。
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             code = launcher.cmd_quick(self._args())
@@ -598,11 +602,146 @@ class QuickStartTest(unittest.TestCase):
         self.assertEqual(code, launcher.EXIT_OK)
         self.assertIn("AWFM", text)
         self.assertIn("start", self.events)
-        self.assertIn("pause", self.events)
+        self.assertIn("hold", self.events)
+        self.assertNotIn("pause", self.events)  # 成功之后不再要「按回车键」
+
+
+class HoldConsoleTest(unittest.TestCase):
+    """启动成功后窗口停在 Ctrl+C 上：自动化绝不挂住，交互时 Ctrl+C 走停止逻辑。"""
+
+    class _Stdin:
+        def __init__(self, tty):
+            self._tty = tty
+
+        def isatty(self):
+            return self._tty
+
+    def _args(self):
+        args = launcher.build_parser().parse_args(["quick"])
+        args.timeout = launcher.DEFAULT_START_TIMEOUT
+        return args
+
+    def test_automation_and_pipes_never_block(self):
+        # AWFM_NO_PAUSE=1 与「标准输入不是终端」都必须立刻返回，否则脚本会被挂死。
+        environment = {key: value for key, value in os.environ.items() if key != "AWFM_NO_PAUSE"}
+        for tty, flag in ((False, None), (True, "1")):
+            environment_now = dict(environment)
+            if flag:
+                environment_now["AWFM_NO_PAUSE"] = flag
+            with mock.patch.dict(os.environ, environment_now, clear=True), \
+                    mock.patch.object(launcher.sys, "stdin", self._Stdin(tty)), \
+                    mock.patch.object(launcher.time, "sleep", side_effect=AssertionError("不该挂住")) as slept, \
+                    mock.patch.object(launcher, "cmd_stop", side_effect=AssertionError("不该停止")):
+                self.assertEqual(quiet(launcher.hold_console, self._args()), launcher.EXIT_OK)
+            self.assertFalse(slept.called)
+
+    def test_ctrl_c_stops_the_service_without_asking_again(self):
+        # 用户按 Ctrl+C 已经表达得很清楚：不再弹「要不要强制终止」，直接走 stop 的强制分支。
+        environment = {key: value for key, value in os.environ.items() if key != "AWFM_NO_PAUSE"}
+        buffer = io.StringIO()
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(launcher.sys, "stdin", self._Stdin(True)), \
+                mock.patch.object(launcher.time, "sleep", side_effect=KeyboardInterrupt), \
+                mock.patch.object(launcher, "cmd_stop", return_value=launcher.EXIT_OK) as stopped, \
+                contextlib.redirect_stdout(buffer):
+            code = launcher.hold_console(self._args())
+        text = buffer.getvalue()
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertIn("按 Ctrl+C 停止服务", text)
+        self.assertIn("收到 Ctrl+C", text)
+        self.assertTrue(stopped.called)
+        stopped_args = stopped.call_args[0][0]
+        self.assertTrue(stopped_args.force)
+        self.assertTrue(stopped_args.yes)
+        self.assertEqual(stopped_args.timeout, launcher.DEFAULT_STOP_TIMEOUT)
+
+
+class StopWithoutGraceTest(unittest.TestCase):
+    """Windows 后台进程收不到关闭请求时，停止不该再白等一个超时。"""
+
+    def _state(self):
+        return {"running": True, "alive": True, "stale": False, "pid": 4242,
+                "url": "http://127.0.0.1:32579/", "host": "127.0.0.1", "port": 32579, "stored": {}}
+
+    def _args(self):
+        args = launcher.build_parser().parse_args(["stop", "--force", "--yes"])
+        args.timeout = launcher.DEFAULT_STOP_TIMEOUT
+        return args
+
+    def test_no_window_skips_the_wait_and_forces(self):
+        waits = []
+        buffer = io.StringIO()
+        with mock.patch.object(launcher, "current_state", return_value=self._state()), \
+                mock.patch.object(launcher, "process_image_name", return_value="python.exe"), \
+                mock.patch.object(launcher, "graceful_stop", return_value="进程没有窗口，无法优雅停止"), \
+                mock.patch.object(launcher, "force_stop", return_value="已强制终止（含子进程）") as forced, \
+                mock.patch.object(launcher, "wait_process_gone",
+                                  side_effect=lambda pid, timeout: waits.append(timeout) or timeout > 0), \
+                mock.patch.object(launcher, "remove_pid_file"), \
+                mock.patch.object(launcher, "port_busy", return_value=False), \
+                contextlib.redirect_stdout(buffer):
+            code = launcher.cmd_stop(self._args())
+        self.assertEqual(code, launcher.EXIT_OK)
+        # 第一次以 0 秒检查：进程还在（0 秒的等待本来就等不到），于是立刻强制终止。
+        self.assertEqual(waits, [0.0, 5.0])
+        self.assertTrue(forced.called)
+        self.assertIn("直接强制终止", buffer.getvalue())
+
+    def test_a_real_graceful_request_still_waits(self):
+        waits = []
+        with mock.patch.object(launcher, "current_state", return_value=self._state()), \
+                mock.patch.object(launcher, "process_image_name", return_value="python.exe"), \
+                mock.patch.object(launcher, "graceful_stop", return_value="已发送 SIGTERM"), \
+                mock.patch.object(launcher, "force_stop", side_effect=AssertionError("不该强制")), \
+                mock.patch.object(launcher, "wait_process_gone",
+                                  side_effect=lambda pid, timeout: waits.append(timeout) or True), \
+                mock.patch.object(launcher, "remove_pid_file"), \
+                mock.patch.object(launcher, "port_busy", return_value=False):
+            code = quiet(launcher.cmd_stop, self._args())
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertEqual(waits, [launcher.DEFAULT_STOP_TIMEOUT])
 
 
 class DispatchTest(unittest.TestCase):
     """main() 的命令分派：空参数=启动，裸选项仍等价于 start。"""
+
+    def test_a_failed_start_still_keeps_the_window(self):
+        # 交棒之后批处理已退出，失败时的等待必须由 main() 补上，否则窗口一闪而过。
+        with mock.patch.object(launcher, "cmd_quick", return_value=launcher.EXIT_FAILED), \
+                mock.patch.object(launcher, "pause_before_close") as paused:
+            code = quiet(launcher.main, [])
+        self.assertEqual(code, launcher.EXIT_FAILED)
+        self.assertTrue(paused.called)
+
+    def test_a_successful_start_does_not_wait_for_enter(self):
+        with mock.patch.object(launcher, "cmd_quick", return_value=launcher.EXIT_OK), \
+                mock.patch.object(launcher, "pause_before_close") as paused:
+            code = quiet(launcher.main, [])
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertFalse(paused.called)
+
+
+class ConsoleCtrlCTest(unittest.TestCase):
+    """run.bat 用 start /b 交棒，进程默认「忽略 Ctrl+C」，启动器必须自己清掉。"""
+
+    def test_posix_is_a_no_op(self):
+        with mock.patch.object(launcher.os, "name", "posix"):
+            self.assertIsNone(launcher.enable_console_ctrl_c())
+
+    def test_no_console_does_not_blow_up(self):
+        fake = mock.Mock()
+        fake.windll.kernel32.SetConsoleCtrlHandler.side_effect = OSError("没有控制台")
+        with mock.patch.object(launcher.os, "name", "nt"), \
+                mock.patch.dict(sys.modules, {"ctypes": fake}):
+            self.assertIsNone(launcher.enable_console_ctrl_c())
+        self.assertTrue(fake.windll.kernel32.SetConsoleCtrlHandler.called)
+
+    def test_windows_call_re_enables_ctrl_c(self):
+        fake = mock.Mock()
+        with mock.patch.object(launcher.os, "name", "nt"), \
+                mock.patch.dict(sys.modules, {"ctypes": fake}):
+            self.assertIsNone(launcher.enable_console_ctrl_c())
+        fake.windll.kernel32.SetConsoleCtrlHandler.assert_called_once_with(None, False)
 
     def _dispatch(self, argv):
         with mock.patch.object(launcher, "cmd_quick", return_value=launcher.EXIT_OK) as quick, \

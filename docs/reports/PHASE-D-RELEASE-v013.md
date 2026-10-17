@@ -7,8 +7,8 @@
 | 依据 | dev_guide/0.1.3_.md（接力任务书 §0~§7） |
 | 基线 | v0.1.2（提交 757c951，827 项自动化 + 8 项静态检查） |
 | 结论 | 五项需求全部实现并通过自动化与真实桌面验收；四层回归 948 项全通过；静态检查 8/8；发行包重建并双工具复核 |
-| 发行包 | dist/AWFM-0.1.3-windows-x64.zip（111 个文件 / 1,751,003 字节，zip 723,835 字节；见 §8） |
-| SHA-256 | 016260006d05130175ed8e42bbf4d3969913e1163c6b8b1821c27d0c8dc98e5e |
+| 发行包 | dist/AWFM-0.1.3-windows-x64.zip（111 个文件 / 1,768,120 字节，zip 730,323 字节；见 §8） |
+| SHA-256 | 0631ed5e9f00821c3388d6580d461300a908df61e03c783236e5407a2e096c6f |
 
 ## 1. v0.1.2 遗留问题清单与处理（任务书 §0 第一步）
 
@@ -80,7 +80,7 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 
 | 行为 | 普通 run.bat / run.sh | 高级 run-advanced.bat / run-advanced.sh |
 |---|---|---|
-| 不带参数 | scripts/launcher.py quick：查环境 → 起服务 → 等 /api/health → 开浏览器 → 打印地址/日志/停止方法 → 等回车关窗 | menu：交互菜单（启动/状态/停止/日志/自检） |
+| 不带参数 | scripts/launcher.py quick：查环境 → 起服务 → 等 /api/health → 开浏览器 → 打印地址/日志/停止方法 → **停在窗口等 Ctrl+C**（`run.bat` 用 `start /b` 交棒，批处理先退出；见 §13） | menu：交互菜单（启动/状态/停止/日志/自检） |
 | 带参数 | 原样透传给 launcher（start/stop/status/logs/check/--port …） | 同左，两者行为一致 |
 | 自动开浏览器 | 默认开；--no-browser 关闭（唯一开关，配置里 open_browser 与旧选项 --open-browser 自 v0.1.3 起不起作用） | start 同样默认开 |
 | 就绪判断 | 轮询 /api/health（DEFAULT_START_TIMEOUT=20s），超时给控制台日志尾部与手动命令，不只看 PID | 同左 |
@@ -128,25 +128,26 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 
 | 项 | 值 |
 |---|---|
-| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖；v0.1.3 的 zip 在「发布后界面微调」三轮之后重新构建，本节数字来自**产出这份 zip 的最终构建**，2026-10-17 15:43） |
-| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（111 个文件 / 1,751,003 字节，含 MANIFEST.json；清单 file_count=110） |
-| zip 大小 | 723,835 字节（706.9 KB），成员 111 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
-| **SHA-256** | 016260006d05130175ed8e42bbf4d3969913e1163c6b8b1821c27d0c8dc98e5e |
-| 双工具复核 | Get-FileHash -Algorithm SHA256 → 01626000…98E5E；certutil -hashfile … SHA256 → 01626000…98e5e，一致 |
-| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（bbc132c0308c5adde631eca5274ff165222301196874993ce6ae234874c8f65f） |
+| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖；v0.1.3 的 zip 在「发布后界面微调」四轮之后重新构建，本节数字来自**产出这份 zip 的最终构建**，2026-10-17 20:52） |
+| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（111 个文件 / 1,768,120 字节，含 MANIFEST.json；清单 file_count=110） |
+| zip 大小 | 730,323 字节（713.2 KB），成员 111 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
+| **SHA-256** | 0631ed5e9f00821c3388d6580d461300a908df61e03c783236e5407a2e096c6f |
+| 双工具复核 | Get-FileHash -Algorithm SHA256 → 0631ED5E…96C6F；certutil -hashfile … SHA256 → 0631ed5e…096c6f，一致 |
+| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（ab2cb266375e1e19bc41c7be299fa610768058c6014cae26c1bc3ed01c49261c） |
 
-**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 六次验收/，用 `Expand-Archive` 解压的就是上表这份 zip）：
+**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 七次验收/，用 `Expand-Archive` 解压的就是上表这份 zip）：
 
 - run.bat check → 退出码 0（8 项自检通过：Python / 依赖 / 端口空闲 / 前端资源 / 日志目录可写 / 配置 / 主机密钥策略 / 自检 --check）
-- run.bat start --port 8796 --no-browser → 退出码 0，版本 0.1.3，PID 35932，启动时间 2026-10-17T15:43:18+08:00
+- run.bat start --port 8798 --no-browser → 退出码 0，版本 0.1.3，PID 28984，启动时间 2026-10-17T20:53:00+08:00
 - GET / → 200，9371 字节
 - GET /api/health → 200，status ok、version 0.1.3、connections 0；响应头 Server: AWFM/0.1.3
-- run.bat status → 退出码 0（`AWFM 状态` / `  状态  运行中（AWFM 0.1.3）` / `  进程  35932（python.exe）` / 启动时间 / 版本 0.1.3）
-- run.bat stop --force --yes → 退出码 0（`已强制终止（含子进程）` / `[ OK ] AWFM 已停止（强制终止）。`），端口 8796 监听数归 0
+- run.bat status → 退出码 0（`AWFM 状态` / `  状态  运行中（AWFM 0.1.3）` / `  进程  28984（python.exe）` / 启动时间 / 版本 0.1.3）
+- `run.bat`（不带参数、非交互）→ 退出码 0，1.05 秒返回（交棒路径在包里同样生效；`AWFM_NO_PAUSE=1` 时只打印不驻留）
+- run.bat stop --force --yes → 退出码 0（`已强制终止（含子进程）` / `[ OK ] AWFM 已停止（强制终止）。`），整条命令 **2.25 秒**（改前约 10 秒），端口 8798 监听数归 0
 
-包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T15:43:00 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明已改为「双击 run.bat（Linux/macOS 用 ./run.sh）即启动：查环境、起服务、就绪后自动打开浏览器。要看菜单、换端口、看诊断时用 run-advanced.bat」。
+包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T20:52:37 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明现在有四条：双击 run.bat（Linux/macOS 用 ./run.sh）即启动：查环境、起服务、就绪后自动打开浏览器；启动后窗口留在前台，按 Ctrl+C 停止服务；直接关掉窗口则服务继续在后台运行；要看菜单、换端口、看诊断时用 run-advanced.bat。
 
-**与中间构建的差异**：本交付里 zip 先后重建过六次（`7ef7ebae…` → `70dbfb5f…` → `9b3f9bb4…` → `ca235f49…` → `978fd2d8…`（15:41，作废：其后又改了 `scripts/launcher.py` 的输出缓冲与自检标题）→ `01626000…`（15:43，最终）），第一次目录树 110 个文件，之后各次均为 111 个。中间有几版多出来的那个文件是留在 `dist/AWFM-0.1.3-windows-x64/` 里运行的端到端遗留进程写下的 `logs/awfm-console.log`；它同时也是重打包失败的原因——只要还有进程的当前目录在那个暂存目录里，`shutil.rmtree` 就报 `PermissionError: [WinError 32] 另一个程序正在使用此文件`（本轮前后撞上过多次，占用者分别是遗留的 `app/main.py --port 32579` 与 `cmd.exe → run.bat`）。最终构建前先清掉这些进程，暂存目录里不再有 `logs/`，内容文件回到 110 个（+ `MANIFEST.json` = 111）。
+**与中间构建的差异**：本交付里 zip 先后重建过七次（`7ef7ebae…` → `70dbfb5f…` → `9b3f9bb4…` → `ca235f49…` → `978fd2d8…`（15:41，作废：其后又改了 `scripts/launcher.py` 的输出缓冲与自检标题）→ `01626000…`（15:43）→ `0631ed5e…`（20:52，最终，第四轮的启动窗口改动）），第一次目录树 110 个文件，中间各次为 111 个，本轮最终构建同样是 111 个（110 个内容文件 + `MANIFEST.json`）。中间有几版多出来的那个文件是留在 `dist/AWFM-0.1.3-windows-x64/` 里运行的端到端遗留进程写下的 `logs/awfm-console.log`；它同时也是重打包失败的原因——只要还有进程的当前目录在那个暂存目录里，`shutil.rmtree` 就报 `PermissionError: [WinError 32] 另一个程序正在使用此文件`（本轮前后撞上过多次，占用者分别是遗留的 `app/main.py --port 32579` 与 `cmd.exe → run.bat`）。最终构建前先清掉这些进程，暂存目录里不再有 `logs/`，内容文件回到 110 个（+ `MANIFEST.json` = 111）。
 
 **自引用说明**：`docs/` 在包里，而本节要记录包自身的字节数与哈希，两者无法与自身完全闭合——上表记录的是产出这份 zip 的那次构建，如果之后又改过 `docs/`，以包外的 `dist/SHA256SUMS.txt` 为准。
 
@@ -163,7 +164,8 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 | 7baa0a1 | 发布后修正（第二轮）：按钮文字居中、大小与类型拉开距离、权限改八进制 + 悬浮字符形式、发行包重建与文档同步（版本号仍 0.1.3）；7 个文件，+167 −25 | 交付后修正（见 §11） |
 | b731ec1 | 收尾：把 9e419f1 / 7baa0a1 与第二轮发行包数字回写进本报告 §9 与 CHANGELOG 状态行 | 收尾 |
 | e9eb32c | 发布后修正（第三轮）：启动脚本与四个入口的输出文案改为「启动 / 菜单」术语、两字标签排版、`field()`/`short_path()`/`pad_width()` 与 `flush=True`，自检标题去重；同步 `USER_GUIDE` / `RELEASE` / `CHANGELOG` / `AGENTS.md` / 本报告 §12，并重建发行包（版本号仍 0.1.3）；见 §12 | 交付后修正（见 §12） |
-| 本行所在提交 | 收尾：把第三轮提交哈希与 15:43 发行包数字回写进本报告 §8/§9 与 CHANGELOG 状态行 | 收尾 |
+| eea3cf1 | 收尾：把第三轮提交哈希 `e9eb32c` 与 15:43 发行包数字回写进本报告 §9 与 CHANGELOG 状态行 | 收尾 |
+| 本行所在提交 | 发布后修正（第四轮）：启动成功后窗口留在前台、按 Ctrl+C 停止服务；`run.bat` 用 `start /b` 交棒避免 `Terminate batch job`、启动器 `enable_console_ctrl_c()`、`cmd_stop` 不再白等 10 秒；文档与发行包同步（版本号仍 0.1.3）；见 §13 | 交付后修正（见 §13） |
 
 **为什么没有把「界面优化」和「新建/多选」拆成两个提交**：两者落在同一批文件（frontend/index.html、app.css、files.js、app.js、fileops.js、state.js、api.js）的相邻 hunk 里，拆分需要 hunk 级 staging 且无法在本机复跑中间态，因此合并为一个「界面与交互」提交并在本表如实标注，符合任务书 §7「拆不开就合并并说明」的要求。
 
@@ -322,5 +324,53 @@ AWFM 0.1.3  统一启动器
 - **CU 证据口径**：§4 的 14 条 CU 证据是改词之前拍的，截图里仍是旧文案，保留作当轮验收的历史记录，不作为本轮证据；本轮证据即 12.4 的渲染样例。
 - **发行包**：`python scripts/build.py` 8 项通过后 `python scripts/package.py` 重建（2026-10-17 15:43），并在 `.temp/pkg-test/AWFM 0.1.3 六次验收/`（路径含空格）跑完 `check → start --port 8796 --no-browser → GET / → GET /api/health → status → stop`，退出码全 0、端口 8796 监听归 0；文件数、字节数与 SHA-256 见 §8。
 - **顺带修的两处输出问题**：`say/ok/info/warn/fail/field` 的 `print` 统一加 `flush=True`——原先 `cmd_check` 先打印自己的检查、再 `subprocess.run(app/main.py --check)`，子进程直写控制台而父进程 stdout 有缓冲，实际顺序会颠倒；`cmd_check` 的标题由 `AWFM 自检` 改成 `AWFM 0.1.3  启动前检查`，避免与 `app/main.py --check` 的 `AWFM 0.1.3 自检` 撞名（实测顺序已稳定：前置检查 → 分隔提示 → 应用自检 → `[ OK ] 自检通过。`）。
+
+## 13. 发布后界面微调（第四轮）：启动后窗口留在前台，Ctrl+C 停止（v0.1.3，不升版本号）
+
+交付之后用户提出：「依旧是在 0.1.3 直接修改：普通启动取消回车隐藏窗口，而是允许用户直接使用 Ctrl+C 关闭服务。」
+
+### 13.1 改了什么
+
+- **启动成功后不再等回车**：`run.bat` / `run.sh` 不带参数（或显式 `quick`）时，窗口停在原地并打印 `停止  按 Ctrl+C 停止服务；直接关闭本窗口，服务继续在后台运行`。按 Ctrl+C 走 `cmd_stop` 的同一套逻辑：先请求优雅停止 → 收不到响应就强制终止 → 清理 PID 文件、检查端口；不再二次追问「要不要强制终止」。
+- **已经在运行的分支同样停住**：这时按 Ctrl+C 停掉正在跑的那个服务（PID 从 `data/awfm.pid` 读）。
+- **失败路径不变**：仍然 `pause_before_close()` 等一次回车，让人看清失败原因。这个等待从 `cmd_quick` 移到了 `main()`——因为 `run.bat` 现在会先交棒退出（13.2），批处理自己的 `pause` 不会再执行，失败的窗口就没人留了。
+- **非交互不挂住**：`AWFM_NO_PAUSE=1`、标准输入不是终端（管道、计划任务、输出重定向）时直接返回，与改造前一致。
+
+### 13.2 必须先解决的 cmd 问题：批处理交棒（`start /b`）
+
+第一次实测（真实控制台 + 真实 Ctrl+C）就撞上了：服务确实停了，但窗口里冒出两次 `Terminate batch job (Y/N)?`——外层 `cmd` 与 UTF-8 引导段里那层嵌套 `cmd` 各问一次。这是 cmd.exe 处理「批处理正在执行时收到 Ctrl+C」的固有行为，Python 侧无法抑制，`cmd /c`、`start /wait` 也都试过/推断过，同样会问。
+
+解法是**让批处理先退场**：`run.bat` 在「不带参数或 `quick`」时用 `start "" /b ...` 把启动器挂到同一个控制台，随即 `exit /b 0`。控制台要等最后一个附着进程退出才关闭，所以窗口仍在，只是里面只剩启动器一个进程——Ctrl+C 只送到它，`cmd` 已经不在，自然不会再问。带其他命令（`status` / `stop` / `check` / `logs` …）仍然同步执行并原样回传退出码，自动化的判据不变。
+
+副作用一个：`start` 拉起的进程带「忽略 Ctrl+C」标志，按了没反应。启动器在 `main()` 开头调用 `SetConsoleCtrlHandler(NULL, FALSE)` 清掉它（`enable_console_ctrl_c()`，非 Windows 空操作、没有控制台时静默失败）。`run.sh` 用 `exec` 交出进程，本来就没有这层问题。
+
+### 13.3 停止不再白等 10 秒
+
+Windows 上后台服务是 `DETACHED_PROCESS`，没有窗口，`taskkill /PID … /T`（不带 `/F`）必然被拒绝。原来 `cmd_stop` 无论如何都等满 `--timeout`（默认 10 秒）才问是否强制；现在先看请求有没有真的发出去——消息以「进程没有窗口」开头就说明没送到，直接进入强制终止。实测 `run.bat stop --force --yes` 从约 10 秒降到 **1 秒内**，Ctrl+C 同理。
+
+### 13.4 实测（真实控制台 + 真实 Ctrl+C）
+
+用 `AttachConsole` + `GenerateConsoleCtrlEvent` 在一个新建的控制台里给启动器发真正的 Ctrl+C（与用户按键盘等效）：
+
+| 场景 | 结果 |
+|---|---|
+| `run.bat`（不带参数，控制台里） | `cmd` 退出码 0 → 启动器占住控制台 → Ctrl+C 后 `[信息] 收到 Ctrl+C，正在停止服务。` → `进程没有窗口，无法优雅停止` → `[信息] 进程没有窗口，收不到关闭请求，直接强制终止。` → `已强制终止（含子进程）` → `[ OK ] AWFM 已停止（强制终止）。`；端口归 0；**没有** `Terminate batch job` |
+| `run.bat quick --port 8799 --pid-file … --console-log …` | 同上，`Terminate batch job` 出现 **0** 次 |
+| 非交互（`AWFM_NO_PAUSE=1` / 无终端） | 打印结果后立即返回，不等待 |
+| `run.bat stop --force --yes` | 约 10 秒 → **1 秒内**（13.3） |
+
+实测日志留在 `.temp/cc2-run.log`、`.temp/cc3-run.log`（探测脚本 `.temp/cc_probe3.py` / `cc_probe4.py`，属临时文件，不进包）。
+
+### 13.5 回归
+
+- `python -X utf8 -m unittest discover -s tests/unit -t .` → **695 项 OK**（1 项 Windows 平台跳过；比上一轮多 10 项，全部是本轮新增：Ctrl+C 等待与跳过条件、`cmd_stop` 的「没发请求就不等」与「真发了请求仍要等」、`main()` 失败留窗、交棒断言、`SetConsoleCtrlHandler` 三个用例）。
+- `tests.unit.test_run_bat` **18 项 OK**（新增 1 项：`run.bat` 的 `:handoff` 与 `start "" /b` 断言）。
+- `tests.integration/test_launcher_lifecycle` **18 项 OK（55.3s）**——比上一轮的 111.6s 快了一倍，原因就是 13.3：每次停止不再白等 10 秒。
+- e2e 三套本轮重跑（结果见 13.6）；`tests/security` 未重跑（改动只在启动器与批处理外壳上）。
+
+### 13.6 本轮 e2e 与发行包
+
+- `tests.e2e` 三套（`test_browser_layout` / `test_browser_sidebar` / `test_browser_v013`）：**19 项 OK（90.6s）**。第一次重跑时 19 项全被跳过，原因是 `WSL 测试床不可用（需要 data/testbed/id_ed25519 与 127.0.0.1:2222 上的 sshd）`——上一轮结束后 WSL 已停；先 `wsl -d Ubuntu bash scripts/testbed_wsl.sh up` 把测试床拉起来再跑即全绿。
+- 发行包：本轮改动后重建，数字与 SHA-256 见 §8；在含空格的独立目录里重跑了 `check → start → GET / → /api/health → status → stop` 全流程。
 
 

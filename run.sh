@@ -1,6 +1,7 @@
 #!/bin/sh
 # AWFM 启动入口（Linux / macOS）—— 真正的逻辑都在 scripts/launcher.py
 # 用法：./run.sh（不带参数 = 启动：查环境、起服务、就绪后自动开浏览器）。
+# 启动后窗口留在前台，按 Ctrl+C 停止服务；直接关掉窗口则服务继续在后台运行。
 # 带参数时透传：./run.sh status / stop / restart / logs / check / help / menu。
 # 需要交互菜单请用 ./run-advanced.sh，两者行为一致，只是默认动作不同。
 # 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 状态不符（未做改动）。

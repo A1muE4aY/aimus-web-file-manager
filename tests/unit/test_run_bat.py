@@ -18,6 +18,11 @@ v0.1.3 §5 把入口拆成两个（行为一致，只是不带参数时的默认
 
 「不带参数补什么」这条规则只写在两份外壳里，所以必须在这里钉住：写反了，
 普通用户双击一下就掉进菜单，高级用户双击 run-advanced 就直接起服务，两边都不对。
+
+v0.1.3 第四轮：启动（不带参数或显式 quick）改成「交棒」——用 `start /b` 把启动器
+挂到这个控制台上、批处理立刻退出。这样按 Ctrl+C 只会送到启动器，不会被 cmd.exe
+拦下来问「Terminate batch job (Y/N)?」；窗口也不会关，因为控制台要等最后一个
+附着进程退出才关闭。带其他参数（status / stop / check …）仍是同步执行并回传退出码。
 """
 
 from __future__ import annotations
@@ -121,6 +126,17 @@ class BatBootstrapTests(unittest.TestCase):
 
 class EntryDefaultTests(unittest.TestCase):
     """不带参数时走哪条路：run 入口=quick（launcher 默认），run-advanced 入口=菜单。"""
+
+    def test_plain_bat_hands_the_console_over_for_start(self):
+        # 交棒：不带参数与显式 quick 都走 :handoff，批处理随即 exit /b 0，
+        # 窗口里只剩启动器，Ctrl+C 才不会被 cmd.exe 的批处理询问拦住。
+        text = _text("run.bat")
+        self.assertIn('if "%~1"=="" goto :handoff', text)
+        self.assertIn('if /i "%~1"=="quick" goto :handoff', text)
+        self.assertIn(":handoff", text)
+        self.assertIn('start "" /b %AWFM_PY% "' + LAUNCHER + '" %*', text)
+        # 其他命令仍是同步执行（退出码要能带回给自动化脚本）。
+        self.assertLess(text.index(":handoff"), text.index(LAUNCHER + '" %*'))
 
     def test_plain_bat_leaves_the_default_to_the_launcher(self):
         text = _text("run.bat")

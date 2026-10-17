@@ -20,6 +20,7 @@ exit /b %ERRORLEVEL%
 
 rem AWFM 启动入口（Windows）—— 真正的逻辑都在 scripts\launcher.py
 rem 用法：双击即可（不带参数 = 启动：查环境、起服务、就绪后自动开浏览器）。
+rem 启动后窗口留在前台，按 Ctrl+C 停止服务；直接关掉窗口则服务继续在后台运行。
 rem 带参数时透传：run.bat status / stop / restart / logs / check / help / menu。
 rem 需要交互菜单请用 run-advanced.bat，两者行为一致，只是默认动作不同。
 rem 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 状态不符（未做改动）。
@@ -57,11 +58,21 @@ if not defined AWFM_PY (
   goto :failed
 )
 
-rem 3) 转交启动器：参数原样转发（含带空格的路径）。分辨率检查、配置检查、
-rem    端口检查、后台启动、PID 文件、停止与日志都在启动器里，批处理只负责找 Python。
+rem 3) 不带参数（双击）或显式 quick = 启动：用 start /b 把启动器交给它自己占住这个
+rem    控制台，批处理随即退出。窗口里只剩启动器一个进程，按 Ctrl+C 只会送到它，不会被
+rem    cmd.exe 拦下来问「Terminate batch job (Y/N)?」。窗口不会因此关掉——控制台要等最后
+rem    一个附着进程退出才关闭，启动器还在里面等 Ctrl+C。
+if "%~1"=="" goto :handoff
+if /i "%~1"=="quick" goto :handoff
+
+rem 4) 带其他参数时同步执行并原样返回退出码（status / stop / check / logs …）。
 %AWFM_PY% "scripts\launcher.py" %*
 set "AWFM_CODE=%ERRORLEVEL%"
 if not "%AWFM_CODE%"=="0" goto :failed
+endlocal & exit /b 0
+
+:handoff
+start "" /b %AWFM_PY% "scripts\launcher.py" %*
 endlocal & exit /b 0
 
 :failed
