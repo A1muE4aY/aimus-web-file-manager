@@ -213,6 +213,7 @@ AWFM（Aimu's Web File Manager）是一个**跑在你自己电脑上**的小工�
 启动入口（`run.bat`）与菜单入口（`run-advanced.bat`）接受同一套命令，下面统一写作 `run.bat`，换成 `run-advanced.bat` 效果相同；Linux / macOS 上把 `run.bat` 换成 `run.sh`。
 
 - **启动窗口里的**（双击 `run.bat`，或 `run.bat quick`）：窗口会停在前台，按 **Ctrl+C** 就停止服务（等价 `run.bat stop --force --yes`）。直接关掉窗口只是关窗口，服务继续在后台跑。
+  注意 Ctrl+C 是**控制台范围**的事件：双击打开的那个窗口里只剩启动器，所以很干净；如果你是在已有终端里运行 `run.bat`，那个终端也会收到这次 Ctrl+C。
 - **后台启动的**（`run.bat start`）：用 `run.bat stop`。启动器只停止自己记在 `data\awfm.pid` 里的那个进程，不会去动别的程序。后台进程在 Windows 上没有窗口、收不到温和停止请求，启动器发现请求根本发不出去时就直接问「是否强制终止 PID N」，你答 y 才强制结束（不再白等 10 秒）；不是交互终端时一律当作拒绝（`run.bat stop --force --yes` 供自动化用）。
 - **前台启动的**（`run.bat start --foreground` 或 `python app\main.py`）：在窗口里按 **Ctrl+C**，会打印「正在停止……」，断开所有 SSH 会话，不留孤儿 ssh 进程（验收项 T-013）。直接关窗口不保证走完这套清理，所以建议用 Ctrl+C。
 - 想确认状态或看日志：`run.bat status`、`run.bat logs`（默认最后 40 行，`-n 100` 可加长，`--follow` 持续跟踪）。

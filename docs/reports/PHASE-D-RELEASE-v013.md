@@ -165,7 +165,8 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 | b731ec1 | 收尾：把 9e419f1 / 7baa0a1 与第二轮发行包数字回写进本报告 §9 与 CHANGELOG 状态行 | 收尾 |
 | e9eb32c | 发布后修正（第三轮）：启动脚本与四个入口的输出文案改为「启动 / 菜单」术语、两字标签排版、`field()`/`short_path()`/`pad_width()` 与 `flush=True`，自检标题去重；同步 `USER_GUIDE` / `RELEASE` / `CHANGELOG` / `AGENTS.md` / 本报告 §12，并重建发行包（版本号仍 0.1.3）；见 §12 | 交付后修正（见 §12） |
 | eea3cf1 | 收尾：把第三轮提交哈希 `e9eb32c` 与 15:43 发行包数字回写进本报告 §9 与 CHANGELOG 状态行 | 收尾 |
-| 本行所在提交 | 发布后修正（第四轮）：启动成功后窗口留在前台、按 Ctrl+C 停止服务；`run.bat` 用 `start /b` 交棒避免 `Terminate batch job`、启动器 `enable_console_ctrl_c()`、`cmd_stop` 不再白等 10 秒；文档与发行包同步（版本号仍 0.1.3）；见 §13 | 交付后修正（见 §13） |
+| 5f82cfd | 发布后修正（第四轮）：启动成功后窗口留在前台、按 Ctrl+C 停止服务；`run.bat` 用 `start /b` 交棒避免 `Terminate batch job`、启动器 `enable_console_ctrl_c()`、`cmd_stop` 不再白等 10 秒；文档与发行包同步（版本号仍 0.1.3）；见 §13（11 个文件，+343 −57） | 交付后修正（见 §13） |
+| 本行所在提交 | 收尾：把第四轮提交哈希 `5f82cfd` 与 20:52 发行包数字回写进本报告 §8/§9 与 CHANGELOG 状态行 | 收尾 |
 
 **为什么没有把「界面优化」和「新建/多选」拆成两个提交**：两者落在同一批文件（frontend/index.html、app.css、files.js、app.js、fileops.js、state.js、api.js）的相邻 hunk 里，拆分需要 hunk 级 staging 且无法在本机复跑中间态，因此合并为一个「界面与交互」提交并在本表如实标注，符合任务书 §7「拆不开就合并并说明」的要求。
 
