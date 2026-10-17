@@ -446,11 +446,16 @@ body {
   max-width: 420px;
 }
 
-.col-name { width: 44%; }
-.col-size { width: 90px; text-align: right; }
-.col-type { width: 92px; }
-.col-perm { width: 96px; }
-.col-time { width: 150px; }
+/* 这两张表（搜索结果表 / 文件列表）用同一批 .col-* 类名，但列宽来源不同：
+   搜索结果表没有 colgroup，列宽只能由这里给；文件列表的列宽统一写在下面
+   #file-table 段的 <colgroup> 规则里。**不要在这里给文件列表的列宽** ——
+   百分比一旦混进来，固定布局会把其余列的 px 当权重按比例拉伸，
+   于是「写了 96px 却渲染成 102px」，表头与数值也就对不上了（v0.1.3 实测）。 */
+.search-table .col-name { width: 40%; }
+.search-table .col-size { width: 90px; text-align: right; }
+.search-table .col-type { width: 92px; }
+.search-table .col-perm { width: 96px; }
+.search-table .col-time { width: 150px; }
 
 td.col-size { text-align: right; font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
 td.col-perm { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
@@ -894,6 +899,10 @@ td.col-dir {
 #file-table { table-layout: fixed; min-width: 300px; }
 
 #file-table col.col-select { width: 36px; }
+/* 名称列吃掉剩下的宽度（auto），其余列是实打实的 px —— 一旦这里混进百分比，
+   固定布局就会把 px 当权重按比例拉伸，「写 96px 渲染成 102px」，表头与数值
+   也就对不上了。信息列的宽度分两档：窄窗口用下面这套（保证 1280 一带名字列
+   还有 130px 左右），宽窗口另有 @media (min-width: 1600px) 的加宽档。 */
 #file-table col.col-name { width: auto; }
 #file-table col.col-size { width: 96px; }
 #file-table col.col-type { width: 88px; }
@@ -909,11 +918,18 @@ td.col-dir {
 /* 表头的「操作」整列居中（v0.1.3 §1）。 */
 #file-table th.col-action { text-align: center; }
 
+/* 表头跟着数值一起右对齐：数值本来就是右对齐（个位、KiB/MiB 才对得齐），
+   表头留在左边就变成「表头在最左、数字贴最右」，一眼看过去就是没对齐。 */
+#file-table thead th.col-size { text-align: right; }
+
 /* 七个动作恒常占七个槽位，顺序固定 编辑→复制→剪切→重命名→删除→压缩→解压。
    按钮按 DOM 顺序落格，不写 grid-column：槽位数固定，于是同一个动作在任何一行、
    任何文件类型下都落在同一个横坐标；不适用的动作只是灰着，它占的格子还在，
    后面的按钮就不会往前挪（v0.1.2 的「换类型就跳位置」正是少了这一条）。
-   7 × 44px + 6 × 4px 间隙 = 332px，加单元格左右内边距 20px = 352px。 */
+   基准档：7 × 44px + 6 × 4px 间隙 = 332px，加单元格左右内边距 20px = 352px。
+   够宽时（@media (min-width: 1600px)）槽位放到 48px：7 × 48 + 6 × 4 = 360px，
+   加内边距 20px = 380px —— 48px 是「重命名」三个字在 11.5px 字号下的实际宽度
+   加余量，宽屏上没必要再把三个字压成省略号。 */
 #file-table .file-actions-box {
   display: grid;
   grid-template-columns: repeat(7, 44px);
@@ -1105,14 +1121,17 @@ td.col-dir {
   #file-table .file-actions-box { grid-template-columns: repeat(7, 40px); }
 }
 
-/* 权限列最先收起：它是逐行比较次数最少的一列，收掉它也还能看大小与时间。 */
-@media (max-width: 1120px) {
+/* 权限列最先收起：它是逐行比较次数最少的一列，收掉它也还能看大小与时间。
+   门槛从 1120 提到 1240：信息列加宽之后，1121~1239 这一带（表格约 760~880px）
+   同时放「名称 + 大小 + 类型 + 权限 + 时间 + 七格按钮」已经放不下 —— 实测名字列
+   会被压到 0 并出现横向滚动。宁可早一点收权限列，也不要把名字列挤没。 */
+@media (max-width: 1240px) {
   #file-table col.col-perm,
   #file-table th.col-perm,
   #file-table td.col-perm { display: none; }
 }
 
-@media (max-width: 1020px) {
+@media (max-width: 1120px) {
   #file-table col.col-type,
   #file-table th.col-type,
   #file-table td.col-type { display: none; }
@@ -1129,8 +1148,10 @@ td.col-dir {
 }
 
 /* VS Code 里并排两个编辑器这种更窄的窗口，七格一行实在放不下才折成 4 + 3：
-   块级网格里每一行仍然是固定槽位，所以跨行逐格对齐；所有行都折，行高一致。 */
-@media (max-width: 820px) {
+   块级网格里每一行仍然是固定槽位，所以跨行逐格对齐；所有行都折，行高一致。
+   门槛从 820 提到 880：820~879 这一带七格一行虽然塞得下，但名字列只剩 40px 左右，
+   折成两行反而读得出文件名。 */
+@media (max-width: 880px) {
   #file-table col.col-action { width: 240px; }
   #file-table .file-actions-box { grid-template-columns: repeat(4, 52px); }
 }
@@ -1140,6 +1161,20 @@ td.col-dir {
   #file-table col.col-size,
   #file-table th.col-size,
   #file-table td.col-size { display: none; }
+}
+
+/* 宽窗口（≥1600px CSS 视口）：信息列各加一些宽度，槽位从 44px 放到 48px。
+   够宽的时候没有必要让名字列独占余量 —— 「2026-10-17 14:03」「drwxr-xr-x」
+   挤在 96/104px 里只有 10px 内边距，读起来像贴着列线；多出来的位置给它们，
+   名称列仍然弹性，只是不再一家独大。加宽档只在 1600 以上生效，所以窄窗口
+   的收列节奏（1240 / 1120 / 1000 / 880 / 740）不受影响。 */
+@media (min-width: 1600px) {
+  #file-table col.col-size { width: 120px; }
+  #file-table col.col-type { width: 108px; }
+  #file-table col.col-perm { width: 136px; }
+  #file-table col.col-time { width: 190px; }
+  #file-table col.col-action { width: 380px; }
+  #file-table .file-actions-box { grid-template-columns: repeat(7, 48px); }
 }
 
 /* ------------------------------------------------- 在线虚拟机发现（v0.1.1 阶段五） */

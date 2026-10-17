@@ -128,23 +128,25 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 
 | 项 | 值 |
 |---|---|
-| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖） |
-| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（110 个文件 / 1,697,942 字节，含 MANIFEST.json） |
-| zip 大小 | 700,053 字节（683.6 KB），成员 110 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
-| **SHA-256** | 7ef7ebae885b69892b46cfac61865961198e2b474372287c9735f34ed593312f |
-| 双工具复核 | Get-FileHash -Algorithm SHA256 → 7EF7EBAE…312F；certutil -hashfile … SHA256 → 7ef7ebae…312f，一致 |
-| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（46eb13df1a343ad7bb9850701942192e4f5528ed7864b3521ec76410f75e8da8） |
+| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖；v0.1.3 的 zip 在「发布后界面微调」之后重新构建，本节数字来自**产出这份 zip 的最终构建**） |
+| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（111 个文件 / 1,730,284 字节，含 MANIFEST.json；清单 file_count=110） |
+| zip 大小 | 715,605 字节（698.8 KB），成员 111 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
+| **SHA-256** | 9b3f9bb4349dd176ebca740769421a67d7009a84ac20dfe11631dc64b3355c4e |
+| 双工具复核 | Get-FileHash -Algorithm SHA256 → 9B3F9BB4…55C4E；certutil -hashfile … SHA256 → 9b3f9bb4…55c4e，一致 |
+| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（0d46a8a02f8297d6ef747f1ee2a543e1638ae8ca69f5a3278c3dfbb43600b383） |
 
-**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 独立验收/）：
+**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 三次验收/，解压的就是上表这份 zip）：
 
-- run.bat check → 退出码 0（8 项自检 + 1 警告：信任库尚未建立）
-- run.bat start --port 8791 --no-browser → 退出码 0，版本 0.1.3，PID 20884
+- run.bat check → 退出码 0（8 项自检通过：Python / 依赖 / 端口空闲 / 前端资源 / 日志目录可写 / 配置 / 主机密钥策略 / 自检 --check）
+- run.bat start --port 8793 --no-browser → 退出码 0，版本 0.1.3，PID 32936，启动时间 2026-10-17T14:24:14+08:00
 - GET / → 200，9371 字节
 - GET /api/health → 200，status ok、version 0.1.3、connections 0；响应头 Server: AWFM/0.1.3
-- run.bat status → 退出码 0，显示 PID 20884 / 端口 8791 / 启动时间
-- run.bat stop --force --yes → 退出码 0，端口 8791 监听数归 0
+- run.bat status → 退出码 0，显示 PID 32936 / 端口 8793 / 启动时间 / 版本 0.1.3
+- run.bat stop --force --yes → 退出码 0（`已强制终止（taskkill /F，含子进程）`），端口 8793 监听数归 0
 
-包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T13:37:59 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明已改为「双击 run.bat 即普通启动、就绪后自动开浏览器；菜单用 run-advanced.bat」。
+包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T14:23:34 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明已改为「双击 run.bat 即普通启动、就绪后自动开浏览器；菜单用 run-advanced.bat」。
+
+**自引用说明**：`docs/` 在包里，而本节要记录包自身的字节数与哈希，两者无法与自身完全闭合——上表记录的是产出这份 zip 的那次构建，如果之后又改过 `docs/`，以包外的 `dist/SHA256SUMS.txt` 为准。
 
 ## 9. Git 记录
 
@@ -155,10 +157,51 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 | ec3df14 | 阶段 C：启动脚本拆普通/高级 + 自动开浏览器（9 个文件，+761 −55） | 启动脚本 |
 | 48951f3 | 阶段 D：版本升 0.1.3、文档同步、阶段报告 A~D、打包白名单、发行包与最终报告（12 个文件，+764 −57） | 最终交付 |
 | 本行所在提交 | 收尾：把阶段 D 的提交哈希回写进 CHANGELOG 与本报告 §9 | 收尾 |
+| 发布后修正提交 | 表格表头对齐、列宽改 px、宽屏加宽档、断点重排、单测断言，以及 CHANGELOG / RELEASE / 本报告的同步（版本号仍 0.1.3，不升 0.1.4） | 交付后修正（见 §10） |
 
 **为什么没有把「界面优化」和「新建/多选」拆成两个提交**：两者落在同一批文件（frontend/index.html、app.css、files.js、app.js、fileops.js、state.js、api.js）的相邻 hunk 里，拆分需要 hunk 级 staging 且无法在本机复跑中间态，因此合并为一个「界面与交互」提交并在本表如实标注，符合任务书 §7「拆不开就合并并说明」的要求。
 
 阶段报告：docs/reports/PHASE-A-BACKEND-v013.md、PHASE-B-UI-v013.md、PHASE-C-LAUNCHER-v013.md、本报告（PHASE-D-RELEASE-v013.md），均已在 docs/reports/_index.md 登记。
 
 仓库至今**没有任何 git 标签**（v0.1.2 的结论延续），v0.1.3 同样未打标签、未对外发布。
+
+## 10. 发布后界面微调：表格对齐与信息列宽度（v0.1.3，不升版本号）
+
+交付之后用户报告：文件列表「对不准、非居中」，并希望信息列（大小 / 类型 / 权限 / 修改时间）多给一些宽度。按用户要求**版本号保持 0.1.3**，不引入 0.1.4。
+
+### 10.1 两条根因（都是实测出来的，不是猜的）
+
+1. **表头被统一左对齐。** `.file-table thead th { text-align: left }`（`frontend/assets/css/app.css:413`）对 `th` 的声明压过 `.col-size { text-align: right }`，于是「大小」表头靠左、数值贴右边界——同一列里表头和数字不在同一条边线上，看上去就是没对齐。实测改动前 `th.col-size` 的计算样式是 `left`、`td.col-size` 是 `right`。
+2. **列宽被按比例放大。** 通用规则里 `.col-name { width: 44% }` 与 `col-size: 96px` 这类 px 列宽混在一起，而文件表是 `table-layout: fixed`（`frontend/assets/css/app.css:899`）。固定布局下百分比与 px 混用会把 px 当**权重**按比例分配：表宽 1498 时写 96px 实际渲染 102.2px（×1.066），表宽 1996 时 ×1.418。同一列的宽度于是随窗口漂移，表头与数值、按钮与「操作」表头的相对位置一起漂。
+
+### 10.2 改动（`frontend/assets/css/app.css` 与一份单测）
+
+- 百分比只留给**没有 colgroup** 的搜索结果表：`.search-table .col-name/.col-size/...`（`app.css:454` 起），并在代码里写明「不要在这里给文件列表列宽」。
+- 文件列表的列宽统一留在 `#file-table` 的 col 规则里，名称列改 `width: auto` 吃掉剩余宽度（`app.css:906`）；基准列宽 大小 96 / 类型 88 / 权限 104 / 修改时间 148 / 操作 352 / 复选 36。
+- 新增 `#file-table thead th.col-size { text-align: right; }`（`app.css:923`），表头跟着数值走。
+- 新增 `@media (min-width: 1600px)` 加宽档（`app.css:1171`）：大小 120 / 类型 108 / 权限 136 / 修改时间 190 / 操作 380，按钮槽位 `repeat(7, 48px)`；窄窗口的收列节奏不受影响。
+- 断点重排：权限列 1240、类型列 1120、修改时间 1000、大小 740、七槽折两行 880（`app.css:1128` / `:1134` / `:1144` / `:1160` / `:1154`）。原因：信息列加宽后 1121~1239 CSS 视口（表格约 760~880px）同时放「名称 + 四个信息列 + 七个按钮」已放不下，实测名称列被压到 0 并出现横向滚动；820~879 七槽一行虽塞得下，名称列却只剩 40px 左右，不如折成 4+3。
+- `tests/unit/test_frontend_layout.py` 新增两条断言：`#file-table thead th.col-size` 必须右对齐；≥1600px 加宽档必须存在且逐列给出 120/108/136/190。断点断言同步到新门槛，槽位断言同步到 44 / 40 / 38 / 52px 四档。
+
+### 10.3 实测（无头 Edge 打开真实运行实例，`/api/health` 为 `{"ok":true,"data":{"status":"ok","version":"0.1.3","connections":2}}`）
+
+| CSS 视口 | 表格宽 | 名称列 | `th.col-size`（align / 右边界 / 宽） | `td.col-size` | 「操作」表头中心 | 按钮块中心 | 可见列 |
+|---|---|---|---|---|---|---|---|
+| 2048 | 1679 | 745 | right / 1202 / 120 | right / 1202 / 120 | 1826 | 1826 | 名称 大小 类型 权限 修改时间 操作 |
+| 1600 | 1231 | 297 | right / 754 / 120 | right / 754 / 120 | 1378 | 1378 | 同上 |
+| 1500 | 1131 | 343 | right / 776 / 96 | right / 776 / 96 | 1292 | 1292 | 同上 |
+| 1200 | 831 | 175 | right / 608 / 96 | right / 608 / 96 | 1006 | 1006 | 名称 大小 类型 修改时间 操作（权限列已按 1240 断点收起） |
+
+- 四档都满足：表头与数值同一条右边界；按钮块中心与「操作」表头中心逐像素相等；七个按钮无一被 `text-overflow` 截断（`scrollWidth <= clientWidth`）；表格无横向滚动（`scrollWidth == clientWidth`）。
+- 另一张复刻真实标记的探针页（视口 − 360px 模拟侧栏）扫了 16 档宽度（2048 → 660），对齐与居中结论一致；660 档的 26px 溢出是探针模拟宽度造成的，真实页面在 740 断点以上无横向滚动。
+- 证据截图：`.temp/cu-layout/live-2048.png`（2048×1100 的真实实例渲染）。
+
+### 10.4 回归范围与如实说明
+
+- `python -m unittest discover -s tests/unit -t .` → **682 项 OK**（1 项 Windows 平台跳过）。
+- `python -m unittest tests.e2e.test_browser_layout tests.e2e.test_browser_sidebar tests.e2e.test_browser_v013` → **19 项 OK**（85.8s）。
+- `python scripts/build.py` 静态检查 **8 项通过**；`python scripts/package.py` 退出码 0，重建后的包已在含空格的独立目录重跑 §8 的六步验收。
+- **未重跑的部分**：集成层、安全层与其余端到端模块本轮没有重跑（改动只落在 CSS 与一份布局单测上，接口、服务端与启动脚本没有动）。§3 的 948 项统计仍是阶段 D 那次全量回归的结果，本节不重述。
+- **静态资源缓存**：静态响应已经带 `Cache-Control: no-store`（`app/api/responses.py:37` 由 `security_headers()` 统一发出，实测 `/assets/css/app.css` 响应头确实有它），所以升级后刷新一次页面就能拿到新样式，不涉及缓存头改动。实测该响应体 45,072 字节、与工作区里的 `frontend/assets/css/app.css` 一致，说明服务端发的就是新文件。
+- **未做**：把静态资源改成带版本查询串（`?v=…`）留给下一个版本评估；本轮不改 URL 形式。
 

@@ -91,6 +91,24 @@ class TableStructureTests(unittest.TestCase):
         self.assertIn("text-align: center", css_block(css, "#file-table th.col-action"),
                       "表头「操作」没有整列居中")
 
+    def test_size_header_follows_the_numbers_to_the_right_edge(self):
+        # 「对不准」的主因（v0.1.3 发布后实测）：.file-table thead th 的 text-align:left
+        # 会盖掉 .col-size 的 right，于是「大小」表头贴左、数值贴右，一眼看着是两列。
+        css = read(CSS)
+        self.assertIn("text-align: right", css_block(css, "#file-table thead th.col-size"),
+                      "表头「大小」没有跟着数值一起右对齐")
+
+    def test_wide_screens_get_wider_information_columns(self):
+        # 用户要求「信息栏可以多给一些位置」：宽屏上一律 96px 会把大小/时间挤成最短的一行。
+        css = read(CSS)
+        # 注意：文件里另有一处注释也提到 "@media (min-width: 1600px)"，
+        # 所以起点带上左花括号，才不会从那条注释开始截。
+        block = locate(css, "@media (min-width: 1600px) {", "在线虚拟机发现", "宽屏档")
+        for column, width in (("col-size", 120), ("col-type", 108), ("col-perm", 136), ("col-time", 190)):
+            rule = re.search(r"\.%s\s*\{\s*width:\s*(\d+)px" % column, block)
+            self.assertIsNotNone(rule, "宽屏档里没有 %s 的列宽" % column)
+            self.assertEqual(int(rule.group(1)), width, "宽屏档里 %s 的列宽与设计不一致" % column)
+
 
 class ActionSlotTests(unittest.TestCase):
     """§1：七个槽位恒常存在、顺序固定、不适用者禁用而不是隐藏。"""
@@ -145,8 +163,8 @@ class ActionSlotTests(unittest.TestCase):
         self.assertIn("justify-content: center", box, "按钮没有整列居中")
         # 每次收窄都只改槽位宽度，槽位数始终是 7：一改数量，位置就会跳。
         self.assertIn("repeat(7, 40px)", self.css, "≤1280 断点没有保持七个槽位")
-        self.assertIn("repeat(7, 38px)", self.css, "≤1020 断点没有保持七个槽位")
-        self.assertIn("repeat(4, 52px)", self.css, "≤820 断点应当折成 4 + 3 两行")
+        self.assertIn("repeat(7, 38px)", self.css, "≤1120 断点没有保持七个槽位")
+        self.assertIn("repeat(4, 52px)", self.css, "≤880 断点应当折成 4 + 3 两行")
 
     def test_all_seven_buttons_share_one_box_size(self):
         button = css_block(self.css, "#file-table .file-actions-box .btn")
@@ -177,8 +195,11 @@ class BreakpointTests(unittest.TestCase):
         )
 
     def test_columns_are_dropped_in_the_documented_order(self):
-        self.assertTrue(self.hidden_at(1120, "col-perm"), "≤1120 没有收起权限列")
-        self.assertTrue(self.hidden_at(1020, "col-type"), "≤1020 没有收起类型列")
+        # 门槛按「收起后名字列还剩多少」定：信息列加宽后，1121~1239 这一带同时放
+        # 名称 + 大小 + 类型 + 权限 + 时间 + 七格按钮已经会横向滚动（v0.1.3 实测），
+        # 所以权限列从 1120 提前到 1240 收，类型列从 1020 提前到 1120 收。
+        self.assertTrue(self.hidden_at(1240, "col-perm"), "≤1240 没有收起权限列")
+        self.assertTrue(self.hidden_at(1120, "col-type"), "≤1120 没有收起类型列")
         self.assertTrue(self.hidden_at(1000, "col-time"), "≤1000 没有收起修改时间列")
         self.assertTrue(self.hidden_at(740, "col-size"), "≤740 没有收起大小列")
 
