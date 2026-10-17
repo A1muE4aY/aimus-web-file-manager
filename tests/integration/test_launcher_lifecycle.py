@@ -214,7 +214,8 @@ class LauncherLifecycleTest(unittest.TestCase):
         # 陈旧 PID 文件：状态如实说明那个 PID 已经不存在
         code, out = self._run("status")
         self.assertEqual(code, EXIT_STATE, out)
-        self.assertIn("没有运行", out)
+        self.assertIn("未运行", out)
+        self.assertIn("PID 文件已陈旧", out)
         self.assertIn(str(dead_pid), out)
 
         # start 会先清理陈旧文件再启动
@@ -459,7 +460,7 @@ class WrapperExitCodeTest(unittest.TestCase):
 
 
 class WrapperDefaultActionTest(unittest.TestCase):
-    """v0.1.3 §5：普通入口不带参数就是普通启动，高级入口不带参数才进菜单。
+    """v0.1.3 §5：启动入口不带参数就是启动，菜单入口不带参数才进菜单。
 
     这里不真的起服务：把 scripts/launcher.py 换成一个只打印参数的桩，直接看外壳到底
     转发了什么（不带参数 = 转发空列表，由 launcher.main 自己补 quick）。真实启动路径

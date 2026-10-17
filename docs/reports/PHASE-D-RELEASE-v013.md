@@ -7,8 +7,8 @@
 | 依据 | dev_guide/0.1.3_.md（接力任务书 §0~§7） |
 | 基线 | v0.1.2（提交 757c951，827 项自动化 + 8 项静态检查） |
 | 结论 | 五项需求全部实现并通过自动化与真实桌面验收；四层回归 948 项全通过；静态检查 8/8；发行包重建并双工具复核 |
-| 发行包 | dist/AWFM-0.1.3-windows-x64.zip（110 个文件，zip 700,053 字节） |
-| SHA-256 | 7ef7ebae885b69892b46cfac61865961198e2b474372287c9735f34ed593312f |
+| 发行包 | dist/AWFM-0.1.3-windows-x64.zip（111 个文件 / 1,751,003 字节，zip 723,835 字节；见 §8） |
+| SHA-256 | 016260006d05130175ed8e42bbf4d3969913e1163c6b8b1821c27d0c8dc98e5e |
 
 ## 1. v0.1.2 遗留问题清单与处理（任务书 §0 第一步）
 
@@ -128,25 +128,25 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 
 | 项 | 值 |
 |---|---|
-| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖；v0.1.3 的 zip 在「发布后界面微调」两轮之后重新构建，本节数字来自**产出这份 zip 的最终构建**，2026-10-17 15:18） |
-| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（111 个文件 / 1,740,808 字节，含 MANIFEST.json；清单 file_count=110） |
-| zip 大小 | 719,611 字节（702.7 KB），成员 111 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
-| **SHA-256** | ca235f4922b7f5afee3534d71962971b05cd60bb68d1eab2b4cd1ae031730641 |
-| 双工具复核 | Get-FileHash -Algorithm SHA256 → CA235F49…30641；certutil -hashfile … SHA256 → ca235f49…730641，一致 |
-| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（73335f14ad03da63551a61e654f81bcc85e1964ef0da210281930c5d53463ee6） |
+| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖；v0.1.3 的 zip 在「发布后界面微调」三轮之后重新构建，本节数字来自**产出这份 zip 的最终构建**，2026-10-17 15:43） |
+| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（111 个文件 / 1,751,003 字节，含 MANIFEST.json；清单 file_count=110） |
+| zip 大小 | 723,835 字节（706.9 KB），成员 111 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
+| **SHA-256** | 016260006d05130175ed8e42bbf4d3969913e1163c6b8b1821c27d0c8dc98e5e |
+| 双工具复核 | Get-FileHash -Algorithm SHA256 → 01626000…98E5E；certutil -hashfile … SHA256 → 01626000…98e5e，一致 |
+| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（bbc132c0308c5adde631eca5274ff165222301196874993ce6ae234874c8f65f） |
 
-**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 四次验收/，用 `Expand-Archive` 解压的就是上表这份 zip）：
+**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 六次验收/，用 `Expand-Archive` 解压的就是上表这份 zip）：
 
 - run.bat check → 退出码 0（8 项自检通过：Python / 依赖 / 端口空闲 / 前端资源 / 日志目录可写 / 配置 / 主机密钥策略 / 自检 --check）
-- run.bat start --port 8794 --no-browser → 退出码 0，版本 0.1.3，PID 9092，启动时间 2026-10-17T15:19:27+08:00
+- run.bat start --port 8796 --no-browser → 退出码 0，版本 0.1.3，PID 35932，启动时间 2026-10-17T15:43:18+08:00
 - GET / → 200，9371 字节
 - GET /api/health → 200，status ok、version 0.1.3、connections 0；响应头 Server: AWFM/0.1.3
-- run.bat status → 退出码 0，显示 PID 9092 / 端口 8794 / 启动时间 / 版本 0.1.3
-- run.bat stop --force --yes → 退出码 0（`已强制终止（taskkill /F，含子进程）`），端口 8794 监听数归 0
+- run.bat status → 退出码 0（`AWFM 状态` / `  状态  运行中（AWFM 0.1.3）` / `  进程  35932（python.exe）` / 启动时间 / 版本 0.1.3）
+- run.bat stop --force --yes → 退出码 0（`已强制终止（含子进程）` / `[ OK ] AWFM 已停止（强制终止）。`），端口 8796 监听数归 0
 
-包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T15:18:44 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明已改为「双击 run.bat 即普通启动、就绪后自动开浏览器；菜单用 run-advanced.bat」。
+包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T15:43:00 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明已改为「双击 run.bat（Linux/macOS 用 ./run.sh）即启动：查环境、起服务、就绪后自动打开浏览器。要看菜单、换端口、看诊断时用 run-advanced.bat」。
 
-**与中间构建的差异**：本交付里 zips 先后重建过四次，前三次的目录树分别含 110、111、111 个文件。那两次多出来的 1 个文件是留在 `dist/AWFM-0.1.3-windows-x64/` 里运行的端到端遗留进程写下的 `logs/awfm-console.log`。它同时也是重打包失败的原因：只要还有进程的当前目录在那个暂存目录里，`shutil.rmtree` 就报 `PermissionError: [WinError 32] 另一个程序正在使用此文件`（本轮先后两次撞上，第二次的占用者是遗留的 `cmd.exe → run.bat` 与 `app/main.py`）。最终构建前先把遗留的 `run.bat` / `app/main.py` 进程清掉，暂存目录里不再有 `logs/`，文件数回到 110（+ `MANIFEST.json` = 111）。
+**与中间构建的差异**：本交付里 zip 先后重建过六次（`7ef7ebae…` → `70dbfb5f…` → `9b3f9bb4…` → `ca235f49…` → `978fd2d8…`（15:41，作废：其后又改了 `scripts/launcher.py` 的输出缓冲与自检标题）→ `01626000…`（15:43，最终）），第一次目录树 110 个文件，之后各次均为 111 个。中间有几版多出来的那个文件是留在 `dist/AWFM-0.1.3-windows-x64/` 里运行的端到端遗留进程写下的 `logs/awfm-console.log`；它同时也是重打包失败的原因——只要还有进程的当前目录在那个暂存目录里，`shutil.rmtree` 就报 `PermissionError: [WinError 32] 另一个程序正在使用此文件`（本轮前后撞上过多次，占用者分别是遗留的 `app/main.py --port 32579` 与 `cmd.exe → run.bat`）。最终构建前先清掉这些进程，暂存目录里不再有 `logs/`，内容文件回到 110 个（+ `MANIFEST.json` = 111）。
 
 **自引用说明**：`docs/` 在包里，而本节要记录包自身的字节数与哈希，两者无法与自身完全闭合——上表记录的是产出这份 zip 的那次构建，如果之后又改过 `docs/`，以包外的 `dist/SHA256SUMS.txt` 为准。
 
@@ -161,7 +161,9 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 | 本行所在提交 | 收尾：把阶段 D 的提交哈希回写进 CHANGELOG 与本报告 §9 | 收尾 |
 | 9e419f1 | 发布后修正（第一轮）：表格表头对齐、列宽改 px、宽屏加宽档、断点重排、单测断言，以及 CHANGELOG / RELEASE / 本报告的同步（版本号仍 0.1.3，不升 0.1.4）；5 个文件，+136 −36 | 交付后修正（见 §10） |
 | 7baa0a1 | 发布后修正（第二轮）：按钮文字居中、大小与类型拉开距离、权限改八进制 + 悬浮字符形式、发行包重建与文档同步（版本号仍 0.1.3）；7 个文件，+167 −25 | 交付后修正（见 §11） |
-| 本行所在提交 | 收尾：把 9e419f1 / 7baa0a1 与第二轮发行包数字回写进本报告 §9 与 CHANGELOG 状态行 | 收尾 |
+| b731ec1 | 收尾：把 9e419f1 / 7baa0a1 与第二轮发行包数字回写进本报告 §9 与 CHANGELOG 状态行 | 收尾 |
+| 本行所在提交 | 发布后修正（第三轮）：启动脚本与四个入口的输出文案改为「启动 / 菜单」术语、两字标签排版、`field()`/`short_path()`/`pad_width()` 与 `flush=True`，自检标题去重；同步 `USER_GUIDE` / `RELEASE` / `CHANGELOG` / `AGENTS.md` / 本报告 §12，并重建发行包（版本号仍 0.1.3）；见 §12 | 交付后修正（见 §12） |
+| 本行所在提交 | 收尾：把第三轮提交哈希与 15:43 发行包数字回写进本报告 §8/§9 与 CHANGELOG 状态行 | 收尾 |
 
 **为什么没有把「界面优化」和「新建/多选」拆成两个提交**：两者落在同一批文件（frontend/index.html、app.css、files.js、app.js、fileops.js、state.js、api.js）的相邻 hunk 里，拆分需要 hunk 级 staging 且无法在本机复跑中间态，因此合并为一个「界面与交互」提交并在本表如实标注，符合任务书 §7「拆不开就合并并说明」的要求。
 
@@ -256,5 +258,68 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 - `python -m unittest tests.e2e.test_browser_layout tests.e2e.test_browser_sidebar tests.e2e.test_browser_v013` → **19 项 OK**（80.1s）。
 - 集成层、安全层与其余端到端模块本轮没有重跑（改动只落在 CSS、两个前端模块与一份布局单测上，接口、服务端与启动脚本没有动）。
 - 静态资源仍由 `app/api/responses.py:37` 的 `Cache-Control: no-store` 兜住，升级后刷新一次即生效，不涉及缓存头改动。
+
+---
+
+## 12. 发布后界面微调（第三轮）：启动脚本文案（v0.1.3，不升版本号）
+
+按用户第三次反馈（「优化启动脚本，专业化术语、精简并进行排版，如普通启动就叫启动」）重写启动器的全部用户可见文案。
+
+### 12.1 术语
+
+- 「普通启动」→ **启动**，「高级启动」→ **菜单**；入口分别叫「启动入口」（`run.bat` / `run.sh`）与「菜单入口」（`run-advanced.bat` / `run-advanced.sh`）。
+- 同步范围：`scripts/launcher.py` 的模块 docstring、`cmd_quick` docstring、`main()` 注释、`build_parser()` 的 `command` help、`print_usage()`、`cmd_menu`；四个外壳脚本的头注释与 `:failed` 提示；`docs/USER_GUIDE.md`、`docs/RELEASE.md`、`scripts/package.py` 的 `VERSION_TEMPLATE`、`AGENTS.md` 的入口说明。
+- **不回改**：`dev_guide/0.1.3_.md` 是只读任务书；阶段 A~C 报告、更早的 CHANGELOG 条目与 §4 的 CU 证据截图都是历史记录，里面仍是「普通/高级」的旧措辞。
+
+### 12.2 排版
+
+- 新增 `field(label, value)`：`"  " + label + "  " + value`，标签一律两字，值因此都落在第 8 列，成块输出自然对齐；续行统一 8 空格。
+- 新增 `short_path(path)`：项目内路径显示成 `data\config.json`、`logs\awfm.log`，省掉重复的 `E:\Project\aimus-web-file-manager\` 前缀；项目外原样输出。
+- 新增 `pad_width(text, width)`（按 `unicodedata.east_asian_width` 把中文与全角算 2 列）：菜单项原来用 `name.ljust(4)`，「前台运行」四个汉字本就占 8 列、补不出空格，说明列错位；改用 `pad_width(name, 8)` 后七行说明对齐到同一列。
+- `print_usage()` 重排为「标题 → 目录 → 用法 → 命令（9 条）→ 选项（12 条）→ 退出码」；`cmd_menu` 重排为「标题 → 目录 / 地址 / 状态 → 七行两列式菜单 → 提示语」。
+
+### 12.3 精简
+
+- `quick` 不再重复 `start` 已打印的地址 / 日志 / 停止三行：报告只由 `cmd_start` 打印一次，`quick` 只印横幅，成功后补 `[ OK ] 已在浏览器中打开`，失败时补「启动没有成功，按上面的提示处理后重试。」+ `输出` 路径。
+- 删掉「访问范围：仅本机（security.allow_lan=false）」这行（默认就是仅本机，属于噪声）；只有 `security.allow_lan` 为真时才打印 `监听  <host>:<port>（局域网可访问）`。
+- `cmd_status` 在已运行时不再打印「提示」行；PID 文件陈旧、映像名取不到时显示「已退出」而不是 `?`。
+- 措辞专业化：`[ OK ] AWFM 0.1.3 已启动`、`启动失败：服务进程已退出（退出码 N）。`、`正在停止 AWFM（PID N）……`、`进程没有窗口，无法优雅停止`、`已强制终止（含子进程）`、`强制终止 PID N 及其子进程？`、`已放弃，没有做任何强制操作。`、`[信息] AWFM 已经在运行（PID N），无需重复启动。`。
+
+### 12.4 渲染样例（本机实测，`.temp/smoke.ps1`、`.temp/render_menu.py`）
+
+```
+[ OK ] AWFM 0.1.3 已启动
+  地址  http://127.0.0.1:8797/
+  进程  33776（后台运行，关掉本窗口不影响）
+  配置  data\config.json
+  日志  logs\awfm.log    控制台 .temp\smoke-console.log
+  命令  run.bat stop / status / logs
+```
+
+```
+AWFM 0.1.3  统一启动器
+  目录  E:\Project\aimus-web-file-manager
+  地址  http://127.0.0.1:8760/
+  状态  运行中（AWFM 0.1.3）
+
+  1  启动      后台运行，关掉本窗口不影响
+  2  前台运行  Ctrl+C 停止，输出直接显示
+  3  状态      进程、端口、启动时间
+  4  停止      必要时再确认是否强制终止
+  5  日志      最近 40 行
+  6  自检      环境、配置、端口
+  7  退出
+```
+
+`status` / `logs` / `stop` / 非交互 `menu` / 重复 `quick` 也逐条实测；`cmd /c "run.bat status"` 走真实外壳（含 UTF-8 引导段）的输出与 `python scripts/launcher.py status` 一致。
+
+### 12.5 回归与如实说明
+
+- `python -X utf8 -m unittest discover -s tests/unit -t .` → **685 项 OK**（1 项 Windows 平台跳过）；`tests.unit.test_run_bat` **17 项 OK**；`tests.integration.test_launcher_lifecycle` **18 项 OK**（111.6s）。
+- 测试侧同步：`test_run_bat.py` 的入口说明改为「启动入口 / 菜单入口」；`test_launcher.py` 的 quick 用例改为断言横幅 + `start` 事件 + `pause`（报告实际由 `cmd_start` 打印且被 mock）；浏览器打不开的用例改断言「请手动在浏览器里打开上面的地址。」；生命周期集成里陈旧 PID 的断言改为 `未运行` + `PID 文件已陈旧`。
+- **未重跑**：`tests.e2e` 与 `tests/security` 与本轮无关（改动只在启动器输出文案与外壳注释上），§3 的 948 项统计仍是阶段 D 全量回归的结果。
+- **CU 证据口径**：§4 的 14 条 CU 证据是改词之前拍的，截图里仍是旧文案，保留作当轮验收的历史记录，不作为本轮证据；本轮证据即 12.4 的渲染样例。
+- **发行包**：`python scripts/build.py` 8 项通过后 `python scripts/package.py` 重建（2026-10-17 15:43），并在 `.temp/pkg-test/AWFM 0.1.3 六次验收/`（路径含空格）跑完 `check → start --port 8796 --no-browser → GET / → GET /api/health → status → stop`，退出码全 0、端口 8796 监听归 0；文件数、字节数与 SHA-256 见 §8。
+- **顺带修的两处输出问题**：`say/ok/info/warn/fail/field` 的 `print` 统一加 `flush=True`——原先 `cmd_check` 先打印自己的检查、再 `subprocess.run(app/main.py --check)`，子进程直写控制台而父进程 stdout 有缓冲，实际顺序会颠倒；`cmd_check` 的标题由 `AWFM 自检` 改成 `AWFM 0.1.3  启动前检查`，避免与 `app/main.py --check` 的 `AWFM 0.1.3 自检` 撞名（实测顺序已稳定：前置检查 → 分隔提示 → 应用自检 → `[ OK ] 自检通过。`）。
 
 

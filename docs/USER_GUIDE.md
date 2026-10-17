@@ -129,21 +129,19 @@ AWFM（Aimu's Web File Manager）是一个**跑在你自己电脑上**的小工�
 
 ### 步骤 3 启动
 
-双击项目根目录的 **run.bat**（Linux / macOS 是 `./run.sh`）。这是**普通启动**，不用记任何参数：
+双击项目根目录的 **run.bat**（Linux / macOS 是 `./run.sh`）。不需要记任何参数：
 
-    AWFM 文件管理器 —— 普通启动
-      [ OK ] AWFM 已启动（版本 0.1.3）
-        地址：http://127.0.0.1:32579/
-        进程：PID 36596（后台运行，关掉本窗口不会停服务）
-        访问范围：仅本机（security.allow_lan=false）
-        日志：logs\app.log（控制台输出：logs\console.log）
-        停止：run.bat stop      查看状态：run.bat status
-        浏览器：已用系统默认浏览器打开地址
-      [ OK ] 服务已经起来，可以直接用了。
-        地址：http://127.0.0.1:32579/
-        日志：logs\console.log（应用日志：logs\app.log）
-        停止：在项目目录运行 stop（例：run.bat stop）
-        看完按回车关闭这个窗口；关掉它不影响后台服务。
+    AWFM 0.1.3
+    [ OK ] AWFM 0.1.3 已启动
+      地址  http://127.0.0.1:32579/
+      进程  36596（后台运行，关掉本窗口不影响）
+      配置  data\config.json
+      日志  logs\awfm.log    控制台 logs\awfm-console.log
+      命令  run.bat stop / status / logs
+    [ OK ] 已在浏览器中打开
+      按回车键关闭这个窗口……
+
+输出的规律：每行都是「两字标签 + 两个空格 + 值」，所以值都对齐在同一列（第 8 列）。`配置` 一行在配置文件还不存在时显示 `内置默认值（还没生成配置文件）`；只有 `security.allow_lan` 打开时才会多一行 `监听` 说明局域网可访问。`日志` 一行给两个路径：前一个是应用日志，`控制台` 后面那个是后台进程的标准输出。
 
 它依次做四件事：找 Python（版本不够会说清需要什么）→ 拒绝重复启动 → 启动服务并**等 `/api/health` 真的通过** → 才用**系统默认浏览器**打开地址。几条要知道的行为：
 
@@ -152,19 +150,28 @@ AWFM（Aimu's Web File Manager）是一个**跑在你自己电脑上**的小工�
 - **起不来时窗口不会一闪而过**：先打印失败原因，再打印控制台日志路径，然后停在那里等你按回车。
 - **自动化里调用**：`set AWFM_NO_PAUSE=1` 跳过「按回车」，`--no-browser` 是**唯一**不打开浏览器的开关（配置里的 `open_browser` 与旧选项 `--open-browser` 自 v0.1.3 起不再影响启动）。
 
-需要菜单、端口/参数、诊断、状态、日志、安全停止与重启时，用**高级启动**（见下一节）。
+需要菜单、端口/参数、诊断、状态、日志、安全停止与重启时，用**菜单**入口（见下一节）。
 
-### 步骤 3.1 高级启动
+### 步骤 3.1 菜单
 
 双击 **run-advanced.bat**（Linux / macOS 是 `./run-advanced.sh`）进入交互菜单：
 
-    AWFM 启动器
-      目录：E:\Project\aimus-web-file-manager
-      地址：http://127.0.0.1:32579/
-      状态：没有运行
-      1) 后台启动    2) 前台启动（Ctrl+C 停止）    3) 状态    4) 停止    5) 日志    6) 自检    7) 退出
+    AWFM 0.1.3  统一启动器
+      目录  E:\Project\aimus-web-file-manager
+      地址  http://127.0.0.1:32579/
+      状态  未运行
 
-两份脚本做的事完全一样，只是**不带参数时**的默认动作不同：普通入口直接起服务（等价于 `quick`），高级入口进菜单（等价于 `menu`）。带参数时两者都原样透传，脚本会自动切到自己的目录，双击与命令行行为一致：
+      1  启动      后台运行，关掉本窗口不影响
+      2  前台运行  Ctrl+C 停止，输出直接显示
+      3  状态      进程、端口、启动时间
+      4  停止      必要时再确认是否强制终止
+      5  日志      最近 40 行
+      6  自检      环境、配置、端口
+      7  退出
+
+    选择 [1-7]
+
+两份脚本做的事完全一样，只是**不带参数时**的默认动作不同：启动入口直接起服务（等价于 `quick`），菜单入口进交互菜单（等价于 `menu`）。带参数时两者都原样透传，脚本会自动切到自己的目录，双击与命令行行为一致：
 
     run-advanced.bat start                 后台启动（默认）
     run-advanced.bat start --foreground    前台启动，按 Ctrl+C 停止
@@ -175,13 +182,12 @@ AWFM（Aimu's Web File Manager）是一个**跑在你自己电脑上**的小工�
 
 启动成功的实测输出：
 
-      [ OK ] AWFM 已启动（版本 0.1.3）
-        地址：http://127.0.0.1:32579/
-        进程：PID 36596（后台运行，关掉本窗口不会停服务）
-        配置：E:\Project\aimus-web-file-manager\data\config.json
-        访问范围：仅本机（security.allow_lan=false）
-        日志：logs\app.log（控制台输出：logs\console.log）
-        停止：run.bat stop      查看状态：run.bat status
+    [ OK ] AWFM 0.1.3 已启动
+      地址  http://127.0.0.1:32579/
+      进程  36596（后台运行，关掉本窗口不影响）
+      配置  data\config.json
+      日志  logs\awfm.log    控制台 logs\awfm-console.log
+      命令  run.bat stop / status / logs
 
 开发时等价的前台入口是 `python app\main.py`；**项目自身的选项**（`--init-config`、`--check`、`--log-level` 等）仍走它——run.bat 只转交启动器自己的选项（`--port`、`--config`、`--foreground`、`--no-browser`、`--force`、`--yes`…），把别的参数交给它会被拒绝。前台运行的横幅：
 
@@ -190,11 +196,11 @@ AWFM（Aimu's Web File Manager）是一个**跑在你自己电脑上**的小工�
       （仅本机可访问。需要局域网访问请修改配置中的 security.allow_lan）
       按 Ctrl+C 停止
 
-> 什么都不带直接双击 run.bat 时，如果它发现当前不是交互终端（例如被脚本调用），会立刻打印用法与状态并退出，不会挂着等你输入。
+> `run.bat` 双击时如果当前不是交互终端（例如被别的脚本调用），只会打印结果、不会挂着等你按回车；`run-advanced.bat` 在没有终端时打印用法与状态后退出，不进菜单。
 
 ### 步骤 4 打开浏览器
 
-普通启动成功时浏览器已经被自动打开了（高级启动的 `start` 也一样）；没打开就手动访问 http://127.0.0.1:32579/ 。看到左侧「连接」列表就成功了。第一次打开时如果列表是空的，页面会提示「还没有配置任何连接。点右上角「+ 新增」，填入虚拟机的地址与登录方式。」。端口不是 32579 时，以启动器打印的「地址：」为准。
+启动成功时浏览器已经被自动打开了（菜单入口的 `start` 也一样）；没打开就手动访问 http://127.0.0.1:32579/ 。看到左侧「连接」列表就成功了。第一次打开时如果列表是空的，页面会提示「还没有配置任何连接。点右上角「+ 新增」，填入虚拟机的地址与登录方式。」。端口不是 32579 时，以启动器打印的「地址：」为准。
 
 ### 步骤 5 自检
 
@@ -202,7 +208,7 @@ AWFM（Aimu's Web File Manager）是一个**跑在你自己电脑上**的小工�
 
 ### 停止
 
-普通入口（`run.bat`）与高级入口（`run-advanced.bat`）接受同一套命令，下面统一写作 `run.bat`，换成 `run-advanced.bat` 效果相同；Linux / macOS 上把 `run.bat` 换成 `run.sh`。
+启动入口（`run.bat`）与菜单入口（`run-advanced.bat`）接受同一套命令，下面统一写作 `run.bat`，换成 `run-advanced.bat` 效果相同；Linux / macOS 上把 `run.bat` 换成 `run.sh`。
 
 - **后台启动的**（`run.bat start`）：用 `run.bat stop`。启动器只停止自己记在 `data\awfm.pid` 里的那个进程，不会去动别的程序。后台进程收不到 Windows 的温和停止信号，所以它会先问「是否强制终止 PID N」，你答 y 才强制结束；不是交互终端时一律当作拒绝（`run.bat stop --force --yes` 供自动化用）。
 - **前台启动的**（`run.bat start --foreground` 或 `python app\main.py`）：在窗口里按 **Ctrl+C**，会打印「正在停止……」，断开所有 SSH 会话，不留孤儿 ssh 进程（验收项 T-013）。直接关窗口不保证走完这套清理，所以建议用 Ctrl+C。

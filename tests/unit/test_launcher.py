@@ -502,7 +502,7 @@ class StartBrowserTest(unittest.TestCase):
             code = launcher.cmd_start(self._args())
         self.assertEqual(code, launcher.EXIT_OK)
         self.assertIn("没能自动打开浏览器", buffer.getvalue())
-        self.assertIn("http://127.0.0.1:32579/", buffer.getvalue())
+        self.assertIn("请手动在浏览器里打开上面的地址。", buffer.getvalue())
 
     def test_the_child_process_never_opens_its_own_browser(self):
         # 服务进程由前台脚本负责开浏览器，子进程再加一次会出现第二个标签页。
@@ -519,7 +519,7 @@ class StartBrowserTest(unittest.TestCase):
 
 
 class QuickStartTest(unittest.TestCase):
-    """v0.1.3 §5 的普通启动：已经能用的直接给地址，起不来要说清原因并留住窗口。"""
+    """v0.1.3 §5 的启动：已经能用的直接给地址，起不来要说清原因并留住窗口。"""
 
     def setUp(self):
         self.events = []
@@ -585,23 +585,24 @@ class QuickStartTest(unittest.TestCase):
             code = launcher.cmd_quick(self._args())
         text = buffer.getvalue()
         self.assertEqual(code, launcher.EXIT_FAILED)
-        self.assertIn("这次没启动成功", text)
-        self.assertIn("控制台日志", text)
+        self.assertIn("启动没有成功", text)
+        self.assertIn("输出", text)
         self.assertIn("pause", self.events)
 
-    def test_successful_start_shows_address_logs_and_how_to_stop(self):
+    def test_successful_start_prints_the_banner_and_keeps_the_window(self):
+        # 启动报告由 cmd_start 打印（这里被 mock 掉），quick 只负责横幅和「看完再关窗口」。
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             code = launcher.cmd_quick(self._args())
         text = buffer.getvalue()
         self.assertEqual(code, launcher.EXIT_OK)
-        for expected in ("服务已经起来", "http://127.0.0.1:32579/", "日志", "停止", "按回车"):
-            self.assertIn(expected, text)
+        self.assertIn("AWFM", text)
+        self.assertIn("start", self.events)
         self.assertIn("pause", self.events)
 
 
 class DispatchTest(unittest.TestCase):
-    """main() 的命令分派：空参数=普通启动，裸选项仍等价于 start。"""
+    """main() 的命令分派：空参数=启动，裸选项仍等价于 start。"""
 
     def _dispatch(self, argv):
         with mock.patch.object(launcher, "cmd_quick", return_value=launcher.EXIT_OK) as quick, \
@@ -616,7 +617,7 @@ class DispatchTest(unittest.TestCase):
         self.assertFalse(start.called)
         args = quick.call_args[0][0]
         self.assertEqual(args.command, "quick")
-        # 普通启动等的是「服务真的就绪」，所以要按启动超时算，不是停止超时。
+        # 启动等的是「服务真的就绪」，所以要按启动超时算，不是停止超时。
         self.assertEqual(args.timeout, launcher.DEFAULT_START_TIMEOUT)
 
     def test_a_bare_option_still_dispatches_start(self):

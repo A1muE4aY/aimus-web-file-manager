@@ -11,9 +11,9 @@ tests/integration/test_launcher_lifecycle.py 的 WrapperExitCodeTest 里验证�
 
 v0.1.3 §5 把入口拆成两个（行为一致，只是不带参数时的默认动作不同）：
 
-- `run.bat` / `run.sh`：**普通启动**。不带参数时什么都不补，交给 launcher 自己走 quick
+- `run.bat` / `run.sh`：**启动**。不带参数时什么都不补，交给 launcher 自己走 quick
   （查环境 → 起服务 → 就绪后打开默认浏览器）；带参数时原样透传。
-- `run-advanced.bat` / `run-advanced.sh`：**高级启动**。不带参数时补 `menu`（交互菜单，
+- `run-advanced.bat` / `run-advanced.sh`：**菜单**。不带参数时补 `menu`（交互菜单，
   端口/参数/诊断/状态/日志/停止都在里面），带参数时同样原样透传。
 
 「不带参数补什么」这条规则只写在两份外壳里，所以必须在这里钉住：写反了，
@@ -26,7 +26,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BATS = {"run.bat": "普通启动入口", "run-advanced.bat": "高级启动入口"}
+BATS = {"run.bat": "启动入口", "run-advanced.bat": "菜单入口"}
 SHELLS = ("run.sh", "run-advanced.sh")
 GITATTRIBUTES = ROOT / ".gitattributes"
 
@@ -120,11 +120,11 @@ class BatBootstrapTests(unittest.TestCase):
 
 
 class EntryDefaultTests(unittest.TestCase):
-    """不带参数时走哪条路：普通入口=quick（launcher 默认），高级入口=菜单。"""
+    """不带参数时走哪条路：run 入口=quick（launcher 默认），run-advanced 入口=菜单。"""
 
     def test_plain_bat_leaves_the_default_to_the_launcher(self):
         text = _text("run.bat")
-        # 普通入口不能自己补 menu —— 补了就掉进菜单，双击不再是「打开就能用」。
+        # run 入口不能自己补 menu —— 补了就掉进菜单，双击不再是「打开就能用」。
         self.assertNotIn(LAUNCHER + '" menu', text)
         self.assertIn(LAUNCHER + '" %*', text)
 

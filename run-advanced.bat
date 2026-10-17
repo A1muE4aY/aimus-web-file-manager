@@ -18,11 +18,11 @@ exit /b %ERRORLEVEL%
 
 :awfm_utf8_ready
 
-rem AWFM 高级启动入口（Windows）—— 真正的逻辑都在 scripts\launcher.py
+rem AWFM 菜单入口（Windows）—— 真正的逻辑都在 scripts\launcher.py
 rem 不带参数时进入交互菜单（menu）；带参数时与 run.bat 完全一致地透传。
 rem 无论是菜单里的第 1 项还是 start 命令，服务就绪后都会自动打开默认浏览器；
 rem 想关掉自动打开，加 --no-browser。
-rem 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 已经在跑或没在跑（未做改动）。
+rem 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 状态不符（未做改动）。
 rem
 rem 上面那段引导为什么存在：cmd.exe 按控制台代码页逐行读批处理；文件是 UTF-8
 rem 而控制台还在 GBK(936) 时，含中文的行会被从中间截断，后半截被当成命令执行，
@@ -73,12 +73,12 @@ endlocal & exit /b 0
 :failed
 echo.
 if "%AWFM_CODE%"=="3" (
-  echo [提示] 状态和这次请求不一致，没有改动任何东西。
-  echo [提示] 查看状态：run-advanced.bat status      启动服务：run-advanced.bat start
+  echo [提示] 状态与本次请求不一致，没有改动任何东西。
+  echo [提示] 查看状态：run-advanced.bat status    启动服务：run-advanced.bat start
   endlocal & exit /b 3
 )
-if not "%AWFM_CODE%"=="" echo [提示] 本次没有成功完成，退出码 %AWFM_CODE%。
-echo [提示] 查看帮助：run-advanced.bat help      启动前自检：run-advanced.bat check
+if not "%AWFM_CODE%"=="" echo [提示] 本次未完成，退出码 %AWFM_CODE%。
+echo [提示] 帮助：run-advanced.bat help    自检：run-advanced.bat check
 rem 双击运行时窗口会一闪而过，所以出错后停一下等你看完；
 rem 自动化脚本里请先 set AWFM_NO_PAUSE=1 跳过这个等待。
 if not defined AWFM_NO_PAUSE pause

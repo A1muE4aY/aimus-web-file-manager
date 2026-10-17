@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""AWFM 启动器 —— run.bat / run.sh（普通）与 run-advanced.*（高级）背后的实现。
+"""AWFM 启动器 —— run.bat / run.sh（启动）与 run-advanced.*（菜单）背后的实现。
 
-普通启动（v0.1.3 §5）：双击 run.bat / ./run.sh，不带参数，等价于 quick ——
+启动（v0.1.3 §5）：双击 run.bat / ./run.sh，不带参数，等价于 quick ——
 查环境 → 防重复 → 等服务真的就绪 → 用系统默认浏览器打开 → 打印地址、日志、怎么停。
 出错时窗口会停住等你看完（run.bat 里的 pause）。
 
-    run.bat / ./run.sh           # 普通启动（= quick）：就绪后自动开默认浏览器
-    run.bat stop                 # 普通入口也能用命令，参数照旧透传
+    run.bat / ./run.sh           # 启动：就绪后自动开默认浏览器
+    run.bat stop                 # 启动入口也能用命令，参数照旧透传
     run.bat --port 9000          # 省略命令 = start，兼容旧的 start.cmd --port
 
-高级入口（run-advanced.bat / run-advanced.sh）：不带参数时是交互菜单，其余命令同上。
+菜单（run-advanced.bat / run-advanced.sh）：不带参数时是交互菜单，其余命令同上。
 
     run-advanced.bat [命令] [选项]
-    python scripts/launcher.py quick      # 直接用 Python 调普通启动
+    python scripts/launcher.py quick      # 直接用 Python 调启动
     python scripts/launcher.py menu       # 交互菜单
 
 设计要点（对应任务书 §3.2/§3.5）：
@@ -33,11 +33,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import socket
 import subprocess
 import sys
+import unicodedata
 import time
 import urllib.error
 import urllib.request
@@ -78,23 +80,52 @@ def pin_console_encoding() -> None:
 
 
 def say(text: str = "") -> None:
-    print(text)
+    print(text, flush=True)
 
 
 def ok(text: str) -> None:
-    print("[ OK ] " + text)
+    print("[ OK ] " + text, flush=True)
 
 
 def info(text: str) -> None:
-    print("[信息] " + text)
+    print("[信息] " + text, flush=True)
 
 
 def warn(text: str) -> None:
-    print("[警告] " + text)
+    print("[警告] " + text, flush=True)
 
 
 def fail(text: str) -> None:
-    print("[失败] " + text)
+    print("[失败] " + text, flush=True)
+
+
+def field(label: str, value: str) -> None:
+    """一行「两字标签 + 值」。标签统一两字，值就落在同一列上，成块输出自然对齐。"""
+    print("  " + label + "  " + value, flush=True)
+
+
+def pad_width(text: str, width: int) -> str:
+    """按显示宽度补空格（中文与全角算 2 列），让菜单里的说明对齐到同一列。"""
+    used = sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+    return text + " " * max(0, width - used)
+
+
+def short_path(path: object) -> str:
+    """项目内的路径显示成相对路径（data/config.json），省掉重复的长前缀；项目外原样输出。"""
+    try:
+        return str(Path(str(path)).resolve().relative_to(ROOT))
+    except (ValueError, OSError):
+        return str(path)
+
+
+def local_version() -> str:
+    """从 app/__init__.py 取 __version__：读文件而不是导入应用，避免启动器带出副作用。"""
+    try:
+        text = (ROOT / "app" / "__init__.py").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(r'^__version__\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1) if match else ""
 
 
 class LauncherError(Exception):
@@ -345,6 +376,18 @@ def current_state(pid_file: Path) -> dict:
     }
 
 
+def state_label(state: dict) -> str:
+    """状态栏用的短标签：PID 与地址各自占一行，这里不再重复。"""
+    if state["running"]:
+        version = str(state["health"].get("version") or "")
+        return "运行中" + ("（AWFM " + version + "）" if version else "")
+    if state["alive"]:
+        return "进程在，健康检查未通过"
+    if state["stale"]:
+        return "未运行（PID 文件已陈旧）"
+    return "未运行"
+
+
 def describe_state(state: dict) -> str:
     if state["running"]:
         version = str(state["health"].get("version") or "")
@@ -500,17 +543,17 @@ def pause_before_close() -> None:
 
 
 def report_started(settings: dict, pid: int, console_log: Path, version: str) -> None:
-    ok("AWFM 已启动" + ("（版本 " + version + "）" if version else ""))
-    say("  地址：" + settings["url"])
-    say("  进程：PID " + str(pid) + "（后台运行，关掉本窗口不会停服务）")
+    ok(("AWFM " + version + " 已启动") if version else "AWFM 已启动")
+    field("地址", settings["url"])
+    field("进程", str(pid) + "（后台运行，关掉本窗口不影响）")
     if settings["config_exists"]:
-        say("  配置：" + settings["config_path"])
+        field("配置", short_path(settings["config_path"]))
     else:
-        say("  配置：" + settings["config_path"] + "（不存在，本次使用内置默认值）")
-    if not settings["allow_lan"]:
-        say("  访问范围：仅本机（security.allow_lan=false）")
-    say("  日志：" + str(DEFAULT_APP_LOG) + "（控制台输出：" + str(console_log) + "）")
-    say("  停止：" + runner_name() + " stop      查看状态：" + runner_name() + " status")
+        field("配置", "内置默认值（还没生成配置文件）")
+    if settings["allow_lan"]:
+        field("监听", settings["host"] + ":" + str(settings["port"]) + "（局域网可访问）")
+    field("日志", short_path(DEFAULT_APP_LOG) + "    控制台 " + short_path(console_log))
+    field("命令", runner_name() + " stop / status / logs")
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -522,13 +565,13 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     state = current_state(pid_file)
     if state["running"]:
-        info("AWFM 已经在运行，本次不会重复启动。")
-        say("  " + describe_state(state))
-        say("  停止：" + runner_name() + " stop")
+        info("AWFM 已经在运行（PID " + str(state["pid"]) + "），无需重复启动。")
+        field("地址", str(state["url"]))
+        field("命令", runner_name() + " stop")
         return EXIT_STATE
     if state["alive"]:
-        warn("PID " + str(state["pid"]) + " 还在，但健康检查没有通过 —— 可能是上次启动没成功。")
-        say("  先看日志：" + runner_name() + " logs")
+        warn("PID " + str(state["pid"]) + " 仍在运行，但健康检查没有通过 —— 可能上次启动没有成功。")
+        field("日志", runner_name() + " logs")
         return EXIT_STATE
     if state["stale"]:
         info("清理陈旧的 PID 文件（PID " + str(state["pid"]) + " 已不存在）。")
@@ -553,8 +596,8 @@ def cmd_start(args: argparse.Namespace) -> int:
     # 这条提示只在真的要继续启动时才打印：放在所有「拒绝启动」的分支之后，
     # 否则用户会先看到「本次用内置默认值启动」、紧接着又被告知本次不会启动。
     if not settings["config_exists"]:
-        info("配置文件还不存在：" + settings["config_path"])
-        say("  本次用内置默认值启动；要改配置请先运行 python app/main.py --init-config 生成一份。")
+        info("配置文件还不存在：" + short_path(settings["config_path"]))
+        say("       本次用内置默认值启动；要改配置请先运行 python app/main.py --init-config。")
 
     extra_args = ["--no-browser"]
     if args.foreground:
@@ -569,7 +612,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     while time.monotonic() < deadline:
         if process.poll() is not None:
             remove_pid_file(pid_file)
-            fail("启动失败：服务进程已经退出（退出码 " + str(process.returncode) + "）。")
+            fail("启动失败：服务进程已退出（退出码 " + str(process.returncode) + "）。")
             print_console_tail(console_log, 25)
             return EXIT_FAILED
         health = http_health(settings["host"], settings["port"])
@@ -579,10 +622,10 @@ def cmd_start(args: argparse.Namespace) -> int:
         time.sleep(0.25)
 
     if not started:
-        warn("启动超时：" + str(args.timeout) + " 秒内健康检查一直没有通过。")
-        say("  进程仍在运行（PID " + str(process.pid) + "），也许只是启动得慢。")
+        warn("启动超时：" + ("%g" % float(args.timeout)) + " 秒内健康检查没有通过。")
+        field("进程", str(process.pid) + "（仍在运行，可能只是启动得慢）")
         print_console_tail(console_log, 25)
-        say("  停止它：" + runner_name() + " stop")
+        field("停止", runner_name() + " stop")
         return EXIT_FAILED
 
     payload = build_pid_payload(process.pid, settings, console_log)
@@ -596,59 +639,54 @@ def cmd_start(args: argparse.Namespace) -> int:
         args.browser_opened = opened
         args.browser_detail = detail
         if opened:
-            say("  浏览器：已用" + detail + "打开地址")
+            ok("已在浏览器中打开")
         else:
             warn("没能自动打开浏览器（" + detail + "）。")
-            say("  请手动在浏览器里打开：" + settings["url"])
+            say("       请手动在浏览器里打开上面的地址。")
     return EXIT_OK
 
 
 def cmd_quick(args: argparse.Namespace) -> int:
-    """普通启动（任务书 §5）：双击一次就能用。
+    """启动（任务书 §5）：双击一次就能用。
 
     顺序刻意固定：查环境（在 cmd_start 里）→ 拒绝重复启动 → 等 /api/health 真的通过
     → 才用系统默认浏览器打开。浏览器打不开只影响「有没有自动弹窗」，不影响服务本身，
     所以这里不改退出码，只把窗口留住让人看清地址。
     """
-    say("AWFM 文件管理器 —— 普通启动")
-    settings = load_settings(args.config, args.port)
+    version = local_version()
+    say("AWFM" + (" " + version if version else ""))
     state = current_state(Path(args.pid_file))
 
     if state["running"]:
-        info("AWFM 已经在运行，本次不会再启动第二个实例。")
-        say("  地址：" + str(state["url"]))
-        say("  停止：" + runner_name() + " stop")
+        info("AWFM 已经在运行（PID " + str(state["pid"]) + "），无需重复启动。")
+        field("地址", str(state["url"]))
         opened, detail = open_default_browser(str(state["url"]))
         if opened:
-            say("  已经用" + detail + "打开这个地址。")
-            return EXIT_OK
-        warn("没能自动打开浏览器（" + detail + "）。")
-        say("  请手动在浏览器里打开上面的地址。")
+            ok("已在浏览器中打开")
+        else:
+            warn("没能自动打开浏览器（" + detail + "）。")
+            say("       请手动在浏览器里打开上面的地址。")
         pause_before_close()
         return EXIT_OK
 
     code = cmd_start(args)
     if code != EXIT_OK:
-        say("")
-        fail("这次没启动成功。上面的原因处理完再双击一次。")
-        say("  控制台日志：" + str(Path(args.console_log)))
+        # cmd_start 已经把原因和日志尾部说清楚了：这里只补一句「下一步做什么」，再把窗口留住。
+        if code == EXIT_FAILED:
+            say("")
+            fail("启动没有成功，按上面的提示处理后重试。")
+            field("输出", short_path(Path(args.console_log)))
         pause_before_close()
         return code
 
-    ok("服务已经起来，可以直接用了。")
-    say("  地址：" + settings["url"])
-    say("  日志：" + str(Path(args.console_log)) + "（应用日志：" + str(DEFAULT_APP_LOG) + "）")
-    say("  停止：在项目目录运行 stop（例：" + runner_name() + " stop）")
-    if not getattr(args, "browser_opened", True):
-        say("  服务在跑，只是没能自动打开浏览器 —— 复制上面的地址到浏览器即可。")
-    say("  看完按回车关闭这个窗口；关掉它不影响后台服务。")
     pause_before_close()
     return EXIT_OK
 
 
 def run_foreground(settings: dict, console_log: Path, extra_args: list, pid_file: Path) -> int:
     argv = build_argv(settings, extra_args)
-    info("前台运行：输出同时写入 " + str(console_log) + "；按 Ctrl+C 停止。")
+    info("前台运行，Ctrl+C 停止。")
+    field("输出", short_path(console_log))
     append_console_log(console_log, argv, "由 run 前台启动")
     with console_log.open("ab") as handle:
         process = subprocess.Popen(argv, cwd=str(ROOT), env=child_env(),
@@ -657,17 +695,17 @@ def run_foreground(settings: dict, console_log: Path, extra_args: list, pid_file
         try:
             code = process.wait()
         except KeyboardInterrupt:
-            info("收到 Ctrl+C，正在停止……")
+            info("收到 Ctrl+C，正在停止。")
             process.terminate()
             try:
                 code = process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                warn("进程没有在 10 秒内退出，请再按一次 Ctrl+C，或手动结束 PID " + str(process.pid) + "。")
+                warn("进程没有在 10 秒内退出，再按一次 Ctrl+C，或手动结束 PID " + str(process.pid) + "。")
                 code = EXIT_FAILED
         finally:
             remove_pid_file(pid_file)
     if code == 0:
-        ok("AWFM 已停止（退出码 0）。")
+        ok("AWFM 已停止。")
         return EXIT_OK
     fail("服务退出，退出码 " + str(code) + "。日志尾部：")
     print_console_tail(console_log, 20)
@@ -680,22 +718,24 @@ def run_foreground(settings: dict, console_log: Path, extra_args: list, pid_file
 def cmd_status(args: argparse.Namespace) -> int:
     state = current_state(Path(args.pid_file))
     stored = state["stored"]
-    say("AWFM 运行状态")
-    say("  状态：" + describe_state(state))
+    say("AWFM 状态")
+    field("状态", state_label(state))
     if state["pid"]:
-        say("  地址：" + state["url"])
-        say("  进程：PID " + str(state["pid"]) + "，映像名 " + (process_image_name(state["pid"]) or "?"))
+        field("地址", state["url"])
+        image = process_image_name(state["pid"]) or ("已退出" if not state["alive"] else "未知")
+        field("进程", str(state["pid"]) + "（" + image + "）")
         if stored.get("started_at"):
-            say("  启动时间：" + str(stored["started_at"]))
+            field("启动", str(stored["started_at"]))
+        if state["running"]:
+            field("命令", runner_name() + " stop / logs")
     else:
         try:
             settings = load_settings(args.config, args.port)
-            say("  地址：" + settings["url"] + "（按当前配置，未在运行）")
-            say("  端口：" + ("被占用" if port_busy(settings["host"], settings["port"]) else "空闲"))
+            field("地址", settings["url"] + "（按当前配置，尚未运行）")
+            field("端口", "被占用" if port_busy(settings["host"], settings["port"]) else "空闲")
         except LauncherError as exc:
             warn("读不到配置，无法显示预期地址：" + exc.message)
     if state["running"]:
-        say("  提示：" + runner_name() + " stop 停止；" + runner_name() + " logs 看日志")
         return EXIT_OK
     return EXIT_STATE
 
@@ -709,8 +749,8 @@ def graceful_stop(pid: int) -> str:
         completed = subprocess.run(["taskkill", "/PID", str(pid), "/T"],
                                    capture_output=True, text=True, check=False)
         if completed.returncode == 0:
-            return "已发送停止请求（taskkill /PID " + str(pid) + " /T，未使用 /F）"
-        return "Windows 拒绝了优雅停止（该进程没有窗口，通常只能在确认后强制终止）"
+            return "已请求停止（taskkill /PID " + str(pid) + " /T）"
+        return "进程没有窗口，无法优雅停止"
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -725,7 +765,7 @@ def force_stop(pid: int) -> str:
         completed = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                                    capture_output=True, text=True, check=False)
         if completed.returncode == 0:
-            return "已强制终止（taskkill /F，含子进程）"
+            return "已强制终止（含子进程）"
         return "taskkill /F 失败：" + (completed.stderr.strip() or completed.stdout.strip())
     try:
         os.kill(pid, signal.SIGKILL)
@@ -771,13 +811,13 @@ def cmd_stop(args: argparse.Namespace) -> int:
         if settings and port_busy(settings["host"], settings["port"]):
             warn("AWFM 没有在运行（没有 PID 文件），但 " + settings["host"] + ":" + str(settings["port"])
                  + " 上有别的程序在监听。")
-            say("  停止只作用于 AWFM 自己记录的进程，这里不会去动它。")
+            say("       停止只作用于 AWFM 自己记录的进程，这里不会去动它。")
             return EXIT_FAILED
         info("AWFM 没有在运行，什么都没做。")
         return EXIT_STATE
 
     if state["stale"]:
-        info("没有在运行：PID 文件里的 PID " + str(state["pid"]) + " 已经不存在，清理这个陈旧文件。")
+        info("没有在运行：PID 文件里的进程（PID " + str(state["pid"]) + "）已不存在，清理陈旧文件。")
         remove_pid_file(pid_file)
         return EXIT_STATE
 
@@ -787,11 +827,11 @@ def cmd_stop(args: argparse.Namespace) -> int:
         fail("拒绝停止：PID " + str(pid) + " 的映像名是 " + (image or "?") + "，不是 python 进程。")
         manual = ("tasklist /FI " + chr(34) + "PID eq " + str(pid) + chr(34)) if os.name == "nt" \
             else ("ps -p " + str(pid) + " -o pid,comm,args")
-        say("  停止操作只肯停 AWFM 记录的 python 进程。请手动确认：" + manual)
+        say("       停止只针对 AWFM 记录的 python 进程，请手动确认：" + manual)
         return EXIT_FAILED
 
-    say("正在停止 AWFM（PID " + str(pid) + "，" + state["url"] + "）……")
-    say("  " + graceful_stop(pid))
+    say("正在停止 AWFM（PID " + str(pid) + "）……")
+    say("        " + graceful_stop(pid))
     if wait_process_gone(pid, float(args.timeout)):
         remove_pid_file(pid_file)
         if port_busy(state["host"], state["port"]):
@@ -799,20 +839,20 @@ def cmd_stop(args: argparse.Namespace) -> int:
         ok("AWFM 已停止。")
         return EXIT_OK
 
-    warn("进程没有在 " + str(args.timeout) + " 秒内退出。")
-    allowed = args.force or confirm(
-        "是否强制终止 PID " + str(pid) + "（会连同它的子进程一起结束）？", assume_yes=args.yes)
+    warn("进程没有在 " + ("%g" % float(args.timeout)) + " 秒内退出。")
+    allowed = args.force or confirm("强制终止 PID " + str(pid) + " 及其子进程？", assume_yes=args.yes)
     if not allowed:
-        fail("已放弃：没有做任何强制操作。")
-        say("  稍后重试：" + runner_name() + " stop；确实要强杀时用：" + runner_name() + " stop --force --yes")
+        fail("已放弃，没有做任何强制操作。")
+        field("重试", runner_name() + " stop")
+        field("强制", runner_name() + " stop --force --yes")
         if os.name == "nt":
-            say("  手动处理：tasklist /FI " + chr(34) + "PID eq " + str(pid) + chr(34)
+            say("       手动处理：tasklist /FI " + chr(34) + "PID eq " + str(pid) + chr(34)
                 + "，再用 taskkill /PID " + str(pid) + " /T /F")
         else:
-            say("  手动处理：ps -p " + str(pid) + " -o pid,comm,args，再用 kill -9 " + str(pid))
+            say("       手动处理：ps -p " + str(pid) + " -o pid,comm,args，再用 kill -9 " + str(pid))
         return EXIT_FAILED
 
-    say("  " + force_stop(pid))
+    say("        " + force_stop(pid))
     if wait_process_gone(pid, 5.0):
         remove_pid_file(pid_file)
         ok("AWFM 已停止（强制终止）。")
@@ -835,10 +875,10 @@ def cmd_logs(args: argparse.Namespace) -> int:
         except LauncherError:
             pass
     if not path.exists():
-        info("还没有日志文件：" + str(path))
-        say("  服务启动后会写这里；后台运行的控制台输出见 " + str(DEFAULT_CONSOLE_LOG))
+        info("还没有日志文件：" + short_path(path))
+        say("       服务启动后会写这里；后台运行的控制台输出见 " + short_path(DEFAULT_CONSOLE_LOG))
         return EXIT_STATE
-    say("日志：" + str(path) + "（最后 " + str(args.lines) + " 行）")
+    field("日志", short_path(path) + "（最后 " + str(args.lines) + " 行）")
     say("")
     text = tail_text(path, int(args.lines))
     say(text if text.strip() else "（日志是空的）")
@@ -849,7 +889,7 @@ def cmd_logs(args: argparse.Namespace) -> int:
 
 def follow_log(path: Path) -> int:
     say("")
-    info("正在跟随日志（Ctrl+C 退出）……")
+    info("正在跟随日志，Ctrl+C 退出。")
     try:
         position = path.stat().st_size
         while True:
@@ -883,8 +923,9 @@ def cmd_restart(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     """启动前自检：本脚本先检查环境，再复用 app/main.py --check 的配置与资源检查。"""
-    say("AWFM 启动前自检")
-    say("  项目根目录：" + str(ROOT))
+    version = local_version()
+    say(("AWFM " + version + "  启动前检查") if version else "AWFM 启动前检查")
+    field("目录", str(ROOT))
     failures = 0
 
     try:
@@ -900,7 +941,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     try:
         settings = load_settings(args.config, args.port)
         suffix = "" if settings["config_exists"] else "（不存在，将使用内置默认值）"
-        ok("配置文件：" + settings["config_path"] + suffix)
+        ok("配置：" + short_path(settings["config_path"]) + suffix)
     except LauncherError as exc:
         fail(exc.message)
         if exc.hint:
@@ -910,7 +951,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     if settings:
         ssh_client = find_ssh_client(settings.get("ssh_executable", ""))
         if ssh_client:
-            ok("ssh 客户端：" + ssh_client)
+            ok("ssh：" + ssh_client)
         else:
             fail("找不到系统 ssh 客户端")
             say("          Windows：可选功能里添加「OpenSSH 客户端」；Debian/Ubuntu：sudo apt install openssh-client")
@@ -918,13 +959,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         for label, key in (("数据目录", "data_dir"), ("日志目录", "logs_dir")):
             try:
                 ensure_writable_dir(Path(settings[key]), label)
-                ok(label + "可写：" + str(settings[key]))
+                ok(label + "可写：" + short_path(settings[key]))
             except LauncherError as exc:
                 fail(exc.message)
                 failures += 1
         state = current_state(Path(args.pid_file))
         if state["running"]:
-            info("服务已经在运行：" + describe_state(state) + "（重复 start 会被拒绝，不会起第二个实例）")
+            info("服务已经在运行：" + state_label(state) + "，重复 start 会被拒绝。")
         elif port_busy(settings["host"], settings["port"]):
             fail("端口已被占用：" + settings["host"] + ":" + str(settings["port"]))
             failures += 1
@@ -932,7 +973,7 @@ def cmd_check(args: argparse.Namespace) -> int:
             ok("端口空闲：" + settings["host"] + ":" + str(settings["port"]))
 
     say("")
-    say("  接着运行 app/main.py --check（配置项、前端资源、主机密钥策略等）：")
+    say("  接下来是应用自身的检查（配置项、前端资源、主机密钥策略）：")
     argv = [sys.executable, str(ROOT / "app" / "main.py"), "--check"]
     if args.config:
         argv += ["--config", str(args.config)]
@@ -953,36 +994,45 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def print_usage() -> None:
-    say("AWFM 统一启动器 —— " + str(ROOT))
+    version = local_version()
+    say(("AWFM " + version + "  统一启动器") if version else "AWFM 统一启动器")
+    field("目录", str(ROOT))
     say("")
-    say("用法：" + runner_name() + " [命令] [选项]")
+    say("用法  " + runner_name() + " [命令] [选项]")
     say("")
-    say("命令：")
-    say("  quick        普通启动：双击 run 即可（不带参数时的默认行为，就绪后自动开浏览器）")
-    say("  start        后台启动服务（不带命令直接给 --port 等选项也按 start 处理）")
-    say("  status       查看运行状态")
-    say("  stop         停止服务")
-    say("  restart      先停再启动")
-    say("  logs         看日志尾部（-n 行数，--follow 持续跟随）")
-    say("  check        启动前自检（环境 + 配置）")
-    say("  menu         交互菜单（run-advanced 不带参数时的默认行为）")
+    say("命令")
+    for name, text in (
+        ("start", "启动服务（不带命令时的默认动作）"),
+        ("quick", "启动并打开浏览器（双击 run 的默认动作）"),
+        ("status", "运行状态"),
+        ("stop", "停止服务"),
+        ("restart", "停止后重新启动"),
+        ("logs", "日志尾部（-n 行数，--follow 持续跟随）"),
+        ("check", "启动前自检"),
+        ("menu", "交互菜单（run-advanced 不带参数时的默认动作）"),
+        ("help", "显示本说明"),
+    ):
+        say("  " + name.ljust(9) + text)
     say("")
-    say("选项：")
-    say("  --port N           覆盖监听端口（默认取配置，出厂默认 " + str(DEFAULT_PORT) + "）")
-    say("  --config PATH      指定配置文件（默认 data/config.json）")
-    say("  --foreground       start 时前台运行，Ctrl+C 停止")
-    say("  --no-browser       start/quick 时不要自动打开浏览器（唯一的关闭开关）")
-    say("  --open-browser     v0.1.2 的旧选项，现在默认就会打开，保留只为兼容")
-    say("  --force            stop/restart 时允许强制终止（仍需 --yes 或交互确认）")
-    say("  --yes              不询问、直接确认（配合 --force，脚本化场景用）")
-    say("  --timeout N        start 等待健康检查的秒数（默认 " + str(int(DEFAULT_START_TIMEOUT))
-        + "）/ stop 等待退出的秒数（默认 " + str(int(DEFAULT_STOP_TIMEOUT)) + "）")
-    say("  --pid-file PATH    PID 文件位置（默认 data/awfm.pid）")
-    say("  --log-file PATH    logs 命令要看的日志（默认 logs/awfm.log）")
-    say("  --console-log PATH 后台运行时的控制台输出（默认 logs/awfm-console.log）")
-    say("  -h, --help         显示本说明")
+    say("选项")
+    for flag, text in (
+        ("--port N", "监听端口（默认取配置，出厂 " + str(DEFAULT_PORT) + "）"),
+        ("--config PATH", "配置文件（默认 data/config.json）"),
+        ("--foreground", "前台运行，Ctrl+C 停止"),
+        ("--no-browser", "不自动打开浏览器（唯一的关闭开关）"),
+        ("--open-browser", "v0.1.2 的旧选项，保留只为兼容"),
+        ("--force", "允许强制终止（仍需 --yes 或交互确认）"),
+        ("--yes", "不询问、直接确认（配合 --force）"),
+        ("--timeout N", "等待秒数（启动就绪 " + str(int(DEFAULT_START_TIMEOUT))
+                        + "，停止退出 " + str(int(DEFAULT_STOP_TIMEOUT)) + "）"),
+        ("--pid-file PATH", "PID 文件（默认 data/awfm.pid）"),
+        ("--log-file PATH", "logs 要看的日志（默认 logs/awfm.log）"),
+        ("--console-log PATH", "后台运行的控制台输出（默认 logs/awfm-console.log）"),
+        ("-h, --help", "显示本说明"),
+    ):
+        say("  " + flag.ljust(19) + text)
     say("")
-    say("退出码：0 成功 / 1 失败 / 2 用法错误 / 3 已经在跑或没在跑（未做改动）")
+    say("退出码  0 成功  1 失败  2 用法错误  3 状态不符（未改动）")
 
 
 def cmd_menu(args: argparse.Namespace) -> int:
@@ -999,26 +1049,29 @@ def cmd_menu(args: argparse.Namespace) -> int:
         except LauncherError as exc:
             address = "读不到配置：" + exc.message
         say("")
-        say("============================================================")
-        say(" AWFM —— Aimu's Web File Manager   统一启动器")
-        say(" 目录：" + str(ROOT))
-        say(" 地址：" + address)
-        say(" 状态：" + describe_state(state))
-        say("============================================================")
-        say(" 1) 启动服务（后台运行，关掉本窗口不影响）")
-        say(" 2) 前台启动（Ctrl+C 停止，直接看输出）")
-        say(" 3) 查看运行状态")
-        say(" 4) 停止服务")
-        say(" 5) 查看日志（最后 " + str(DEFAULT_LOG_LINES) + " 行）")
-        say(" 6) 启动前自检")
-        say(" 7) 退出")
+        menu_version = local_version()
+        say(("AWFM " + menu_version + "  统一启动器") if menu_version else "AWFM 统一启动器")
+        field("目录", str(ROOT))
+        field("地址", address)
+        field("状态", state_label(state))
+        say("")
+        for key, name, note in (
+            ("1", "启动", "后台运行，关掉本窗口不影响"),
+            ("2", "前台运行", "Ctrl+C 停止，输出直接显示"),
+            ("3", "状态", "进程、端口、启动时间"),
+            ("4", "停止", "必要时再确认是否强制终止"),
+            ("5", "日志", "最近 " + str(DEFAULT_LOG_LINES) + " 行"),
+            ("6", "自检", "环境、配置、端口"),
+            ("7", "退出", ""),
+        ):
+            say(("  " + key + "  " + pad_width(name, 8) + ("  " + note if note else "")).rstrip())
         try:
-            choice = input("请选择 [1-7]: ").strip()
+            choice = input("选择 [1-7] ").strip()
         except (EOFError, KeyboardInterrupt):
             say("")
             return EXIT_OK
         if choice in ("7", "q", "quit", "exit"):
-            info("已退出。服务状态：" + describe_state(current_state(Path(args.pid_file))))
+            info("已退出。当前状态：" + state_label(current_state(Path(args.pid_file))))
             return EXIT_OK
         if choice == "1":
             args.foreground = False
@@ -1052,7 +1105,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("command", nargs="?", default="menu",
                         choices=("quick", "menu", "start", "status", "stop", "restart",
                                  "logs", "check", "help"),
-                        help="要执行的动作（普通入口默认 quick，高级入口默认 menu）")
+                        help="要执行的动作（run 默认 quick，run-advanced 默认 menu）")
     parser.add_argument("--port", type=int, metavar="N", help="覆盖监听端口（默认取配置）")
     parser.add_argument("--config", metavar="PATH", help="配置文件路径（默认 data/config.json）")
     parser.add_argument("--foreground", action="store_true", help="start 时前台运行")
@@ -1073,7 +1126,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list | None = None) -> int:
     pin_console_encoding()
     raw = list(sys.argv[1:] if argv is None else argv)
-    # 不带任何参数 = 普通启动（v0.1.3 §5）：run.bat / run.sh 双击就是这条路。
+    # 不带任何参数 = 启动（v0.1.3 §5）：run.bat / run.sh 双击就是这条路。
     if not raw:
         raw = ["quick"]
     # 兼容旧习惯：run.bat --port 9000 等价于 run.bat start --port 9000

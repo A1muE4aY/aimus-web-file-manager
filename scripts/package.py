@@ -65,7 +65,7 @@ VERSION_TEMPLATE = """AWFM {version}
 
 便携版说明：
 * 运行只需要 Python 3.10 或更高版本，包内不含任何第三方依赖。
-* 双击 run.bat（Linux/macOS 用 ./run.sh）即普通启动：查环境、起服务、就绪后自动打开浏览器。
+* 双击 run.bat（Linux/macOS 用 ./run.sh）即启动：查环境、起服务、就绪后自动打开浏览器。
 * 要看菜单、换端口、看诊断时用 run-advanced.bat（Linux/macOS 用 ./run-advanced.sh）。
 * 命令行等价写法：run.bat start / run.bat status / run.bat stop / run.bat logs。
 * 真实配置写在 data/config.json（首次启动自动生成），日志写在 logs/。

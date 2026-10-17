@@ -1,9 +1,9 @@
 #!/bin/sh
-# AWFM 普通启动入口（Linux / macOS）—— 真正的逻辑都在 scripts/launcher.py
-# 用法：./run.sh（不带参数 = 普通启动：查环境、起服务、就绪后自动开浏览器）。
-# 带参数时按高级用法透传：./run.sh status / stop / restart / logs / check / help / menu。
-# 需要完整菜单和诊断请用 ./run-advanced.sh，两者行为一致，只是默认动作不同。
-# 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 已经在跑或没在跑（未做改动）。
+# AWFM 启动入口（Linux / macOS）—— 真正的逻辑都在 scripts/launcher.py
+# 用法：./run.sh（不带参数 = 启动：查环境、起服务、就绪后自动开浏览器）。
+# 带参数时透传：./run.sh status / stop / restart / logs / check / help / menu。
+# 需要交互菜单请用 ./run-advanced.sh，两者行为一致，只是默认动作不同。
+# 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 状态不符（未做改动）。
 set -u
 
 # 1) 切到本脚本所在目录：路径里有空格或符号链接都没关系（全程加引号，cd -P 解析真实路径）。
