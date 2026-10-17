@@ -25,7 +25,7 @@
 
 - **版本号**：`0.1.3`（`app/__init__.py:7`；HTTP `Server` 头同步为 `AWFM/0.1.3`）。
 - **依据**：`dev_guide/0.1.3_.md`（用户提供的接力任务书）。五项需求：① 行内操作区独立容器与固定顺序 ② 文件信息列独立布局 ③ 预览独立框 ④ 新建文件/文件夹与多选批量 ⑤ 启动脚本拆普通与高级、就绪后自动开浏览器。
-- **状态**：已完成。四层回归 **948 项**（单元 680 / 集成 147 / 安全 82 / 端到端 39）0 失败 0 错误（1 项为 Windows 平台跳过），合计用时 1127.87s；静态检查 8 项通过；真实桌面 CU 14 条在任务书规定范围内全部执行并留证（`.temp/cu-v013/`）；发行包 `dist/AWFM-0.1.3-windows-x64.zip` 重建（110 个文件 / 1,697,942 字节 / zip 700,053 字节），SHA-256 `7ef7ebae885b69892b46cfac61865961198e2b474372287c9735f34ed593312f` 经 `Get-FileHash` 与 `certutil` 双工具复核一致，并在含空格的独立目录完成 `check → start --port 8791 --no-browser → GET / → GET /api/health → status → stop` 全流程验收（端口监听数归 0）。详见 `docs/reports/PHASE-D-RELEASE-v013.md`。
+- **状态**：已完成。四层回归 **948 项**（单元 680 / 集成 147 / 安全 82 / 端到端 39）0 失败 0 错误（1 项为 Windows 平台跳过），合计用时 1127.87s；静态检查 8 项通过；真实桌面 CU 14 条在任务书规定范围内全部执行并留证（`.temp/cu-v013/`）；发行包 `dist/AWFM-0.1.3-windows-x64.zip` 重建（110 个文件 / 1,697,942 字节 / zip 700,053 字节），SHA-256 `7ef7ebae885b69892b46cfac61865961198e2b474372287c9735f34ed593312f` 经 `Get-FileHash` 与 `certutil` 双工具复核一致，并在含空格的独立目录完成 `check → start --port 8791 --no-browser → GET / → GET /api/health → status → stop` 全流程验收（端口监听数归 0）。详见 `docs/reports/PHASE-D-RELEASE-v013.md`；阶段 D 交付提交 `48951f3`（12 个文件，+764 −57），本行所在提交为收尾提交。
 
 ### 阶段进度（依据 dev_guide/0.1.3_.md 的 A~D 四阶段）
 
