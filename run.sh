@@ -1,6 +1,8 @@
 #!/bin/sh
-# AWFM 统一入口（Linux / macOS）—— 真正的逻辑都在 scripts/launcher.py
-# 用法：./run.sh [命令] [选项]；不带参数时显示交互菜单。
+# AWFM 普通启动入口（Linux / macOS）—— 真正的逻辑都在 scripts/launcher.py
+# 用法：./run.sh（不带参数 = 普通启动：查环境、起服务、就绪后自动开浏览器）。
+# 带参数时按高级用法透传：./run.sh status / stop / restart / logs / check / help / menu。
+# 需要完整菜单和诊断请用 ./run-advanced.sh，两者行为一致，只是默认动作不同。
 # 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 已经在跑或没在跑（未做改动）。
 set -u
 

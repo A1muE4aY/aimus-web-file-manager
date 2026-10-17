@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -328,6 +329,302 @@ class SignalTest(unittest.TestCase):
                 handler(signal.SIGTERM, None)
         finally:
             signal.signal(signal.SIGTERM, previous)
+
+
+def _settings(**overrides):
+    """load_settings 的替身：够 cmd_start / report_started 用就行。"""
+    settings = {
+        "host": "127.0.0.1",
+        "port": 32579,
+        "url": "http://127.0.0.1:32579/",
+        "config_path": str(ROOT / "data" / "config.json"),
+        "config_exists": True,
+        "logs_dir": ROOT / "logs",
+        "data_dir": ROOT / "data",
+        "allow_lan": False,
+        "ssh_executable": "",
+    }
+    settings.update(overrides)
+    return settings
+
+
+class BrowserLaunchTest(unittest.TestCase):
+    """v0.1.3 §5：用系统默认的 URL 机制打开浏览器，不硬编码浏览器，打不开也不能抛。"""
+
+    def test_windows_uses_shell_execute(self):
+        if os.name != "nt":
+            self.skipTest("Windows 专属：os.startfile 就是 ShellExecute")
+        with mock.patch.object(launcher.os, "startfile", create=True) as opened:
+            result = launcher.open_default_browser("http://127.0.0.1:32579/")
+        self.assertEqual(result[0], True)
+        opened.assert_called_once_with("http://127.0.0.1:32579/")
+
+    def test_windows_os_error_is_reported_instead_of_raised(self):
+        if os.name != "nt":
+            self.skipTest("Windows 专属")
+        with mock.patch.object(launcher.os, "startfile", side_effect=OSError("没有关联的应用程序"), create=True):
+            opened, detail = launcher.open_default_browser("http://127.0.0.1:32579/")
+        self.assertFalse(opened)
+        self.assertIn("没有关联", detail)
+
+    def test_posix_without_a_graphical_session_says_what_is_missing(self):
+        with mock.patch.object(launcher.os, "name", "posix"), \
+                mock.patch.object(launcher.sys, "platform", "linux"), \
+                mock.patch.object(launcher.shutil, "which", return_value=None), \
+                mock.patch.dict(os.environ, {"DISPLAY": ""}):
+            opened, detail = launcher.open_default_browser("http://127.0.0.1:32579/")
+        self.assertFalse(opened)
+        self.assertIn("xdg-open", detail)
+
+    def test_posix_prefers_xdg_open(self):
+        calls = []
+
+        def fake_popen(argv, **kwargs):
+            calls.append(argv)
+            return mock.Mock()
+
+        with mock.patch.object(launcher.os, "name", "posix"), \
+                mock.patch.object(launcher.sys, "platform", "linux"), \
+                mock.patch.object(launcher.shutil, "which", side_effect=lambda name: "/usr/bin/" + name), \
+                mock.patch.object(launcher.subprocess, "Popen", side_effect=fake_popen):
+            opened, detail = launcher.open_default_browser("http://127.0.0.1:32579/")
+        self.assertTrue(opened)
+        self.assertEqual(calls, [["xdg-open", "http://127.0.0.1:32579/"]])
+        self.assertEqual(detail, "xdg-open")
+
+
+class PauseTest(unittest.TestCase):
+    """窗口停等一下：自动化（AWFM_NO_PAUSE）与非交互（无 TTY）都不能挂住。"""
+
+    class _Stdin:
+        def __init__(self, tty):
+            self._tty = tty
+
+        def isatty(self):
+            return self._tty
+
+    def test_env_flag_skips_the_wait(self):
+        with mock.patch.dict(os.environ, {"AWFM_NO_PAUSE": "1"}), \
+                mock.patch.object(launcher.sys, "stdin", self._Stdin(True)), \
+                mock.patch("builtins.input", side_effect=AssertionError("不该等用户")) as waited:
+            quiet(launcher.pause_before_close)
+        self.assertFalse(waited.called)
+
+    def test_no_tty_skips_the_wait(self):
+        environment = {key: value for key, value in os.environ.items() if key != "AWFM_NO_PAUSE"}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(launcher.sys, "stdin", self._Stdin(False)), \
+                mock.patch("builtins.input", side_effect=AssertionError("不该等用户")) as waited:
+            quiet(launcher.pause_before_close)
+        self.assertFalse(waited.called)
+
+    def test_interactive_shell_waits_for_enter(self):
+        environment = {key: value for key, value in os.environ.items() if key != "AWFM_NO_PAUSE"}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(launcher.sys, "stdin", self._Stdin(True)), \
+                mock.patch("builtins.input", return_value="") as waited:
+            quiet(launcher.pause_before_close)
+        self.assertTrue(waited.called)
+
+    def test_eof_does_not_escape(self):
+        environment = {key: value for key, value in os.environ.items() if key != "AWFM_NO_PAUSE"}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(launcher.sys, "stdin", self._Stdin(True)), \
+                mock.patch("builtins.input", side_effect=EOFError):
+            self.assertIsNone(quiet(launcher.pause_before_close))
+
+
+class StartBrowserTest(unittest.TestCase):
+    """v0.1.3 §5：cmd_start 必须**健康检查通过之后**才开浏览器；--no-browser 是唯一开关。"""
+
+    def setUp(self):
+        self.events = []
+        self.spawned_extra = []
+        patchers = [
+            mock.patch.object(launcher, "load_settings", return_value=_settings()),
+            mock.patch.object(launcher, "ensure_writable_dir"),
+            mock.patch.object(launcher, "current_state",
+                              return_value={"running": False, "alive": False, "stale": False, "pid": 0}),
+            mock.patch.object(launcher, "port_busy", return_value=False),
+            mock.patch.object(launcher, "check_python", return_value="3.12.10"),
+            mock.patch.object(launcher, "find_ssh_client", return_value="ssh"),
+            mock.patch.object(launcher, "spawn_service", side_effect=self._spawn),
+            mock.patch.object(launcher, "write_pid_file", side_effect=lambda path, payload: self.events.append("pid")),
+            mock.patch.object(launcher, "report_started", side_effect=lambda *args, **kwargs: self.events.append("report")),
+            mock.patch.object(launcher, "http_health", side_effect=self._health),
+            mock.patch.object(launcher, "open_default_browser", side_effect=self._browser),
+        ]
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.browser_fails = False
+
+    def _spawn(self, settings, console_log=None, extra_args=None):
+        self.events.append("spawn")
+        self.spawned_extra = list(extra_args or [])
+        process = mock.Mock()
+        process.pid = 4242
+        process.returncode = None
+        process.poll.return_value = None
+        return process
+
+    def _health(self, host, port):
+        self.events.append("health")
+        return {"version": "0.1.3"}
+
+    def _browser(self, url):
+        self.events.append("browser")
+        if self.browser_fails:
+            return False, "没有图形环境"
+        return True, "系统默认浏览器"
+
+    def _args(self, *extra):
+        args = launcher.build_parser().parse_args(["start", *extra])
+        args.timeout = 5
+        return args
+
+    def test_browser_opens_only_after_the_health_check_passes(self):
+        code = quiet(launcher.cmd_start, self._args())
+        self.assertEqual(code, launcher.EXIT_OK)
+        # 顺序就是验收要求：进程起来 → /api/health 通过 → 才开浏览器。
+        self.assertLess(self.events.index("spawn"), self.events.index("health"))
+        self.assertLess(self.events.index("health"), self.events.index("browser"))
+
+    def test_no_browser_flag_is_the_switch(self):
+        code = quiet(launcher.cmd_start, self._args("--no-browser"))
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertNotIn("browser", self.events)
+
+    def test_a_browser_that_will_not_open_does_not_fail_the_start(self):
+        self.browser_fails = True
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = launcher.cmd_start(self._args())
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertIn("没能自动打开浏览器", buffer.getvalue())
+        self.assertIn("http://127.0.0.1:32579/", buffer.getvalue())
+
+    def test_the_child_process_never_opens_its_own_browser(self):
+        # 服务进程由前台脚本负责开浏览器，子进程再加一次会出现第二个标签页。
+        quiet(launcher.cmd_start, self._args())
+        self.assertIn("--no-browser", self.spawned_extra)
+
+    def test_health_timeout_fails_without_opening_anything(self):
+        with mock.patch.object(launcher, "http_health", return_value={}):
+            args = self._args()
+            args.timeout = 0.3
+            code = quiet(launcher.cmd_start, args)
+        self.assertEqual(code, launcher.EXIT_FAILED)
+        self.assertNotIn("browser", self.events)
+
+
+class QuickStartTest(unittest.TestCase):
+    """v0.1.3 §5 的普通启动：已经能用的直接给地址，起不来要说清原因并留住窗口。"""
+
+    def setUp(self):
+        self.events = []
+        self.running = False
+        self.start_code = launcher.EXIT_OK
+        self.browser_ok = True
+        patchers = [
+            mock.patch.object(launcher, "load_settings", return_value=_settings()),
+            mock.patch.object(launcher, "current_state", side_effect=self._state),
+            mock.patch.object(launcher, "open_default_browser", side_effect=self._browser),
+            mock.patch.object(launcher, "pause_before_close", side_effect=lambda: self.events.append("pause")),
+            mock.patch.object(launcher, "cmd_start", side_effect=lambda args: self._start()),
+        ]
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _state(self, pid_file):
+        if self.running:
+            return {"running": True, "alive": True, "stale": False, "pid": 4242,
+                    "url": "http://127.0.0.1:32579/"}
+        return {"running": False, "alive": False, "stale": False, "pid": 0}
+
+    def _browser(self, url):
+        self.events.append("browser")
+        return (True, "系统默认浏览器") if self.browser_ok else (False, "没有图形环境")
+
+    def _start(self):
+        self.events.append("start")
+        return self.start_code
+
+    def _args(self):
+        args = launcher.build_parser().parse_args(["quick"])
+        args.timeout = launcher.DEFAULT_START_TIMEOUT
+        return args
+
+    def test_already_running_gives_the_address_and_opens_the_browser(self):
+        self.running = True
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = launcher.cmd_quick(self._args())
+        text = buffer.getvalue()
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertIn("已经在运行", text)
+        self.assertIn("http://127.0.0.1:32579/", text)
+        self.assertIn("browser", self.events)
+        self.assertNotIn("start", self.events)  # 不会起第二个实例
+
+    def test_already_running_without_a_browser_keeps_the_window(self):
+        self.running = True
+        self.browser_ok = False
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = launcher.cmd_quick(self._args())
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertIn("手动在浏览器里打开", buffer.getvalue())
+        self.assertIn("pause", self.events)
+
+    def test_failed_start_explains_itself_and_keeps_the_window(self):
+        self.start_code = launcher.EXIT_FAILED
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = launcher.cmd_quick(self._args())
+        text = buffer.getvalue()
+        self.assertEqual(code, launcher.EXIT_FAILED)
+        self.assertIn("这次没启动成功", text)
+        self.assertIn("控制台日志", text)
+        self.assertIn("pause", self.events)
+
+    def test_successful_start_shows_address_logs_and_how_to_stop(self):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = launcher.cmd_quick(self._args())
+        text = buffer.getvalue()
+        self.assertEqual(code, launcher.EXIT_OK)
+        for expected in ("服务已经起来", "http://127.0.0.1:32579/", "日志", "停止", "按回车"):
+            self.assertIn(expected, text)
+        self.assertIn("pause", self.events)
+
+
+class DispatchTest(unittest.TestCase):
+    """main() 的命令分派：空参数=普通启动，裸选项仍等价于 start。"""
+
+    def _dispatch(self, argv):
+        with mock.patch.object(launcher, "cmd_quick", return_value=launcher.EXIT_OK) as quick, \
+                mock.patch.object(launcher, "cmd_start", return_value=launcher.EXIT_OK) as start:
+            code = quiet(launcher.main, argv)
+        return code, quick, start
+
+    def test_no_arguments_dispatches_quick(self):
+        code, quick, start = self._dispatch([])
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertTrue(quick.called)
+        self.assertFalse(start.called)
+        args = quick.call_args[0][0]
+        self.assertEqual(args.command, "quick")
+        # 普通启动等的是「服务真的就绪」，所以要按启动超时算，不是停止超时。
+        self.assertEqual(args.timeout, launcher.DEFAULT_START_TIMEOUT)
+
+    def test_a_bare_option_still_dispatches_start(self):
+        code, quick, start = self._dispatch(["--port", "9000"])
+        self.assertEqual(code, launcher.EXIT_OK)
+        self.assertTrue(start.called)
+        self.assertFalse(quick.called)
+        self.assertEqual(start.call_args[0][0].port, 9000)
 
 
 if __name__ == "__main__":

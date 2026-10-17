@@ -458,5 +458,66 @@ class WrapperExitCodeTest(unittest.TestCase):
         self.assertNotIn("不是内部或外部命令", text)
 
 
+class WrapperDefaultActionTest(unittest.TestCase):
+    """v0.1.3 §5：普通入口不带参数就是普通启动，高级入口不带参数才进菜单。
+
+    这里不真的起服务：把 scripts/launcher.py 换成一个只打印参数的桩，直接看外壳到底
+    转发了什么（不带参数 = 转发空列表，由 launcher.main 自己补 quick）。真实启动路径
+    由 LauncherLifecycleTest 用子进程覆盖。
+    """
+
+    STUB = (
+        "import json, sys\n"
+        "print(json.dumps(sys.argv[1:], ensure_ascii=False))\n"
+        "raise SystemExit(0)\n"
+    )
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory(prefix="awfm-wrapper-default-")
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        (self.root / "scripts").mkdir()
+        (self.root / "scripts" / "launcher.py").write_text(self.STUB, encoding="utf-8")
+        for name in ("run.bat", "run-advanced.bat", "run.sh", "run-advanced.sh"):
+            shutil.copy2(ROOT / name, self.root / name)
+
+    def _run(self, name: str, *args: str):
+        if name.endswith(".sh"):
+            if os.name == "nt":
+                self.skipTest("Windows 上没有 /bin/sh")
+            argv = ["/bin/sh", str(self.root / name), *args]
+        else:
+            if os.name != "nt":
+                self.skipTest("非 Windows 上没有 cmd.exe")
+            argv = ["cmd", "/c", str(self.root / name), *args]
+        environment = dict(os.environ)
+        environment["AWFM_NO_PAUSE"] = "1"
+        environment["PYTHONUTF8"] = "1"
+        environment["PYTHONIOENCODING"] = "utf-8"
+        completed = subprocess.run(argv, cwd=str(self.root), capture_output=True, timeout=60.0, check=False, env=environment)
+        text = (completed.stdout or b"").decode("utf-8", "replace") + (completed.stderr or b"").decode("utf-8", "replace")
+        self.assertEqual(completed.returncode, 0, text)
+        lines = [line.strip() for line in text.splitlines() if line.strip().startswith("[")]
+        self.assertTrue(lines, text)
+        return json.loads(lines[-1])
+
+    def test_plain_entry_forwards_no_arguments(self):
+        name = "run.bat" if os.name == "nt" else "run.sh"
+        self.assertEqual(self._run(name), [])
+
+    def test_advanced_entry_falls_back_to_the_menu(self):
+        name = "run-advanced.bat" if os.name == "nt" else "run-advanced.sh"
+        self.assertEqual(self._run(name), ["menu"])
+
+    def test_advanced_entry_still_forwards_explicit_commands(self):
+        name = "run-advanced.bat" if os.name == "nt" else "run-advanced.sh"
+        self.assertEqual(self._run(name, "status", "--pid-file", "absent.pid"),
+                         ["status", "--pid-file", "absent.pid"])
+
+    def test_plain_entry_still_forwards_explicit_commands(self):
+        name = "run.bat" if os.name == "nt" else "run.sh"
+        self.assertEqual(self._run(name, "help"), ["help"])
+
+
 if __name__ == "__main__":
     unittest.main()

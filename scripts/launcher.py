@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""AWFM 统一启动器 —— run.bat / run.sh 背后的实际实现（v0.1.2 阶段三）。
+"""AWFM 启动器 —— run.bat / run.sh（普通）与 run-advanced.*（高级）背后的实现。
 
-    run.bat                  # 双击：显示交互菜单
-    run.bat start            # 后台启动服务，等到健康检查通过才报成功
-    run.bat status           # 查看运行状态
-    run.bat stop             # 停止服务（先试优雅停止，强杀必须确认）
-    run.bat restart
-    run.bat logs -n 80       # 看日志尾部
-    run.bat check            # 启动前自检（等价 app/main.py --check）
-    run.bat --port 9000      # 省略命令 = start，兼容旧的 start.cmd --port
+普通启动（v0.1.3 §5）：双击 run.bat / ./run.sh，不带参数，等价于 quick ——
+查环境 → 防重复 → 等服务真的就绪 → 用系统默认浏览器打开 → 打印地址、日志、怎么停。
+出错时窗口会停住等你看完（run.bat 里的 pause）。
+
+    run.bat / ./run.sh           # 普通启动（= quick）：就绪后自动开默认浏览器
+    run.bat stop                 # 普通入口也能用命令，参数照旧透传
+    run.bat --port 9000          # 省略命令 = start，兼容旧的 start.cmd --port
+
+高级入口（run-advanced.bat / run-advanced.sh）：不带参数时是交互菜单，其余命令同上。
+
+    run-advanced.bat [命令] [选项]
+    python scripts/launcher.py quick      # 直接用 Python 调普通启动
+    python scripts/launcher.py menu       # 交互菜单
 
 设计要点（对应任务书 §3.2/§3.5）：
 
@@ -433,6 +438,67 @@ def runner_name() -> str:
     return "run.bat" if os.name == "nt" else "run.sh"
 
 
+def open_default_browser(url: str) -> tuple:
+    """用系统默认浏览器打开地址（任务书 §5：不得硬编码某个浏览器）。
+
+    返回 (是否打开成功, 说明)。**打不开不算启动失败** —— 调用方只提示地址，
+    绝不能因为浏览器没起来就报告服务启动失败。
+    """
+    if os.name == "nt":
+        try:
+            os.startfile(url)  # type: ignore[attr-defined]  # ShellExecute，走系统默认浏览器
+            return True, "系统默认浏览器"
+        except OSError as exc:
+            return False, str(exc)
+    if sys.platform == "darwin":
+        candidates = [["open", url]]
+    else:
+        candidates = [
+            ["xdg-open", url],
+            ["gio", "open", url],
+            ["sensible-browser", url],
+        ]
+    for argv in candidates:
+        if not shutil.which(argv[0]):
+            continue
+        try:
+            subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return True, argv[0]
+        except OSError:
+            continue
+    if os.environ.get("DISPLAY") or sys.platform == "darwin":
+        # 有图形环境却没找到打开命令：再试一次 webbrowser 模块（它自己会找）。
+        try:
+            return webbrowser.open(url), "webbrowser 模块"
+        except Exception as exc:  # noqa: BLE001 - 打不开浏览器不该让启动失败
+            return False, str(exc)
+    return False, "没有图形环境，也找不到 xdg-open / gio / sensible-browser"
+
+
+def pause_before_close() -> None:
+    """出错或需要用户读完地址时，别让窗口一闪而过（run.bat 里也有同样的等待）。
+
+    自动化脚本里设 AWFM_NO_PAUSE=1 跳过；非交互（没有 TTY）时也不会挂住。
+    """
+    if os.environ.get("AWFM_NO_PAUSE"):
+        return
+    try:
+        if not (sys.stdin and sys.stdin.isatty()):
+            return
+    except (AttributeError, ValueError):
+        return
+    try:
+        input("  按回车键关闭这个窗口……")
+    except (EOFError, KeyboardInterrupt):
+        say("")
+
+
 def report_started(settings: dict, pid: int, console_log: Path, version: str) -> None:
     ok("AWFM 已启动" + ("（版本 " + version + "）" if version else ""))
     say("  地址：" + settings["url"])
@@ -523,11 +589,60 @@ def cmd_start(args: argparse.Namespace) -> int:
     payload["version"] = str(health.get("version") or "")
     write_pid_file(pid_file, payload)
     report_started(settings, process.pid, console_log, str(health.get("version") or ""))
-    if (settings["open_browser"] or args.open_browser) and not args.no_browser:
-        try:
-            webbrowser.open(settings["url"])
-        except Exception:  # 打不开浏览器不是启动失败
-            warn("没能自动打开浏览器，请手动访问 " + settings["url"])
+    # v0.1.3 §5：默认就是「服务真的就绪之后再打开默认浏览器」，--no-browser 是唯一的关闭开关。
+    # 打不开只提示地址，绝不当成启动失败 —— 浏览器缺失不等于服务没起来。
+    if not args.no_browser:
+        opened, detail = open_default_browser(settings["url"])
+        args.browser_opened = opened
+        args.browser_detail = detail
+        if opened:
+            say("  浏览器：已用" + detail + "打开地址")
+        else:
+            warn("没能自动打开浏览器（" + detail + "）。")
+            say("  请手动在浏览器里打开：" + settings["url"])
+    return EXIT_OK
+
+
+def cmd_quick(args: argparse.Namespace) -> int:
+    """普通启动（任务书 §5）：双击一次就能用。
+
+    顺序刻意固定：查环境（在 cmd_start 里）→ 拒绝重复启动 → 等 /api/health 真的通过
+    → 才用系统默认浏览器打开。浏览器打不开只影响「有没有自动弹窗」，不影响服务本身，
+    所以这里不改退出码，只把窗口留住让人看清地址。
+    """
+    say("AWFM 文件管理器 —— 普通启动")
+    settings = load_settings(args.config, args.port)
+    state = current_state(Path(args.pid_file))
+
+    if state["running"]:
+        info("AWFM 已经在运行，本次不会再启动第二个实例。")
+        say("  地址：" + str(state["url"]))
+        say("  停止：" + runner_name() + " stop")
+        opened, detail = open_default_browser(str(state["url"]))
+        if opened:
+            say("  已经用" + detail + "打开这个地址。")
+            return EXIT_OK
+        warn("没能自动打开浏览器（" + detail + "）。")
+        say("  请手动在浏览器里打开上面的地址。")
+        pause_before_close()
+        return EXIT_OK
+
+    code = cmd_start(args)
+    if code != EXIT_OK:
+        say("")
+        fail("这次没启动成功。上面的原因处理完再双击一次。")
+        say("  控制台日志：" + str(Path(args.console_log)))
+        pause_before_close()
+        return code
+
+    ok("服务已经起来，可以直接用了。")
+    say("  地址：" + settings["url"])
+    say("  日志：" + str(Path(args.console_log)) + "（应用日志：" + str(DEFAULT_APP_LOG) + "）")
+    say("  停止：在项目目录运行 stop（例：" + runner_name() + " stop）")
+    if not getattr(args, "browser_opened", True):
+        say("  服务在跑，只是没能自动打开浏览器 —— 复制上面的地址到浏览器即可。")
+    say("  看完按回车关闭这个窗口；关掉它不影响后台服务。")
+    pause_before_close()
     return EXIT_OK
 
 
@@ -843,20 +958,21 @@ def print_usage() -> None:
     say("用法：" + runner_name() + " [命令] [选项]")
     say("")
     say("命令：")
-    say("  start        后台启动服务（默认；不带命令直接给 --port 等选项也按 start 处理）")
+    say("  quick        普通启动：双击 run 即可（不带参数时的默认行为，就绪后自动开浏览器）")
+    say("  start        后台启动服务（不带命令直接给 --port 等选项也按 start 处理）")
     say("  status       查看运行状态")
     say("  stop         停止服务")
     say("  restart      先停再启动")
     say("  logs         看日志尾部（-n 行数，--follow 持续跟随）")
     say("  check        启动前自检（环境 + 配置）")
-    say("  menu         交互菜单（不带任何参数时的默认行为）")
+    say("  menu         交互菜单（run-advanced 不带参数时的默认行为）")
     say("")
     say("选项：")
     say("  --port N           覆盖监听端口（默认取配置，出厂默认 " + str(DEFAULT_PORT) + "）")
     say("  --config PATH      指定配置文件（默认 data/config.json）")
     say("  --foreground       start 时前台运行，Ctrl+C 停止")
-    say("  --no-browser       start 时不打开浏览器")
-    say("  --open-browser     start 时打开浏览器")
+    say("  --no-browser       start/quick 时不要自动打开浏览器（唯一的关闭开关）")
+    say("  --open-browser     v0.1.2 的旧选项，现在默认就会打开，保留只为兼容")
     say("  --force            stop/restart 时允许强制终止（仍需 --yes 或交互确认）")
     say("  --yes              不询问、直接确认（配合 --force，脚本化场景用）")
     say("  --timeout N        start 等待健康检查的秒数（默认 " + str(int(DEFAULT_START_TIMEOUT))
@@ -934,8 +1050,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="AWFM 统一启动器：启动 / 状态 / 停止 / 日志 / 自检。",
     )
     parser.add_argument("command", nargs="?", default="menu",
-                        choices=("menu", "start", "status", "stop", "restart", "logs", "check", "help"),
-                        help="要执行的动作（默认 menu：交互菜单）")
+                        choices=("quick", "menu", "start", "status", "stop", "restart",
+                                 "logs", "check", "help"),
+                        help="要执行的动作（普通入口默认 quick，高级入口默认 menu）")
     parser.add_argument("--port", type=int, metavar="N", help="覆盖监听端口（默认取配置）")
     parser.add_argument("--config", metavar="PATH", help="配置文件路径（默认 data/config.json）")
     parser.add_argument("--foreground", action="store_true", help="start 时前台运行")
@@ -956,18 +1073,26 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list | None = None) -> int:
     pin_console_encoding()
     raw = list(sys.argv[1:] if argv is None else argv)
+    # 不带任何参数 = 普通启动（v0.1.3 §5）：run.bat / run.sh 双击就是这条路。
+    if not raw:
+        raw = ["quick"]
     # 兼容旧习惯：run.bat --port 9000 等价于 run.bat start --port 9000
-    if raw and raw[0].startswith("-"):
+    elif raw[0].startswith("-"):
         raw = ["start"] + raw
     parser = build_parser()
     args = parser.parse_args(raw)
     if args.timeout is None:
-        args.timeout = DEFAULT_START_TIMEOUT if args.command in ("start", "restart", "menu") else DEFAULT_STOP_TIMEOUT
+        args.timeout = (
+            DEFAULT_START_TIMEOUT
+            if args.command in ("quick", "start", "restart", "menu")
+            else DEFAULT_STOP_TIMEOUT
+        )
     if args.lines < 0:
         say("logs 的行数不能是负数。")
         return EXIT_USAGE
 
     handlers = {
+        "quick": cmd_quick,
         "menu": cmd_menu,
         "start": cmd_start,
         "status": cmd_status,

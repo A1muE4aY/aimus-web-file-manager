@@ -18,8 +18,10 @@ exit /b %ERRORLEVEL%
 
 :awfm_utf8_ready
 
-rem AWFM 统一入口（Windows）—— 真正的逻辑都在 scripts\launcher.py
-rem 用法：run.bat [命令] [选项]；不带参数时显示交互菜单。
+rem AWFM 普通启动入口（Windows）—— 真正的逻辑都在 scripts\launcher.py
+rem 用法：双击即可（不带参数 = 普通启动：查环境、起服务、就绪后自动开浏览器）。
+rem 带参数时按高级用法透传：run.bat status / stop / restart / logs / check / help / menu。
+rem 需要完整菜单和诊断请用 run-advanced.bat，两者行为一致，只是默认动作不同。
 rem 退出码：0 成功 / 1 失败 / 2 用法错误 / 3 已经在跑或没在跑（未做改动）。
 rem
 rem 上面那段引导为什么存在：cmd.exe 按控制台代码页逐行读批处理；文件是 UTF-8
