@@ -22,7 +22,7 @@
 | `docs/` | 文档 | 设计、需求、API、测试、安全、变更、发行与 `reports/` |
 | `data/` | 运行时 | 真实配置与运行数据；**已在 .gitignore**，不提交 |
 | `logs/` | 运行时 | 运行日志；**已在 .gitignore**，不提交 |
-| `dist/` | 构建产物 | 便携发行包；**已在 .gitignore**，不提交 |
+| `dist/` | 构建产物 | 便携发行包（`AWFM/` 暂存树 + `AWFM-<版本>.zip`，解压根目录固定 `AWFM/`）；**已在 .gitignore**，不提交 |
 | `.temp/` | 草稿 | 会话中转；可随时整体清空 |
 | `.archive/` | 归档 | 本项目的 `duplicates/ deps/ junk/ misc/`；**只进不出** |
 | `README.md` `AGENTS.md` `.gitignore` `.gitattributes` | 根文件 | 允许（`.gitattributes` 钉仓库内行尾为 LF：`scripts/testbed_wsl.sh` 在 WSL 里执行，CRLF 会让 shebang 与续行报 `\r: command not found`） |

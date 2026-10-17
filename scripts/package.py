@@ -7,17 +7,26 @@
 
 产出（全部在 dist/ 下，该目录在 .gitignore 中，不提交）：
 
-    dist/AWFM-0.1.0-windows-x64/          暂存目录树（就是解压后看到的样子）
+    dist/AWFM/                            暂存目录树（就是解压后看到的样子）
       ├─ app/ frontend/ docs/             源码、静态资源、完整文档
       ├─ scripts/launcher.py              统一启动器：启动/状态/停止/日志/自检
       ├─ scripts/start.py                 前台启动的兼容入口（等价 run.bat start --foreground）
-      ├─ run.bat  run.sh                  Windows / Linux 统一入口（双击 run.bat 出菜单）
+      ├─ run.bat  run.sh                  Windows / Linux / macOS 启动入口
+      ├─ run-advanced.bat  run-advanced.sh  菜单入口
       ├─ config/config.example.json       配置模板（真实配置仍写到 data/）
       ├─ README.md  LICENSE
       ├─ VERSION                          版本与构建记录
       └─ MANIFEST.json                    文件清单（逐个文件的 SHA-256）
-    dist/AWFM-0.1.0-windows-x64.zip       便携包
+    dist/AWFM-<version>.zip               便携包（成员统一带 AWFM/ 前缀）
     dist/SHA256SUMS.txt                   校验和
+
+命名约定（v0.1.3 起）：
+
+* zip 内的根目录固定为 AWFM/，**不带版本号与平台标签**。解压新版本时覆盖同一个目录，
+  不会出现 AWFM-0.1.3/、AWFM-0.1.4/ 并排、旧文件与新版本混在一起的情况。
+* zip 文件名只带版本号（AWFM-<version>.zip）。运行环境是 Python 3.10+ 与浏览器，
+  与 Windows / Linux / macOS 无关，所以不再生成 -windows-x64 之类的平台后缀。
+* 从旧包升级：把旧目录里的 data/config.json 复制到 AWFM/data/config.json 即可（配置格式未变）。
 
 两处设计取舍，写在这里省得以后猜：
 
@@ -35,7 +44,6 @@ import argparse
 import datetime
 import hashlib
 import json
-import platform as platform_module
 import shutil
 import sys
 import zipfile
@@ -54,36 +62,29 @@ STAGE_FILES = ("README.md", "LICENSE", "config/config.example.json", "VERSION",
 EXCLUDE_DIR_NAMES = {"__pycache__", ".pytest_cache", ".mypy_cache", ".idea", ".vscode"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".log", ".zip", ".tmp"}
 
+#: zip 内的固定根目录 —— 与版本号、平台都无关，解压永远落在 AWFM/
+PACKAGE_ROOT = "AWFM"
+
 #: zip 内的固定时间戳 —— 让「同一份源码 + 同一次生成时间」的包可复现
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 VERSION_TEMPLATE = """AWFM {version}
 构建时间：{built_at}
-目标平台：{platform}
+运行环境：Python 3.10+（Windows / Linux / macOS；浏览器访问）
+包根目录：AWFM/
 构建主机 Python：{python}
 源仓库：{root}
 
 便携版说明：
 * 运行只需要 Python 3.10 或更高版本，包内不含任何第三方依赖。
-* 双击 run.bat（Linux/macOS 用 ./run.sh）即启动：查环境、起服务、就绪后自动打开浏览器。
+* Windows 双击 run.bat，Linux / macOS 运行 ./run.sh：查环境、起服务、就绪后自动打开浏览器。
 * 启动后窗口留在前台，按 Ctrl+C 停止服务；直接关掉窗口则服务继续在后台运行。
-* 要看菜单、换端口、看诊断时用 run-advanced.bat（Linux/macOS 用 ./run-advanced.sh）。
+* 要看菜单、换端口、看诊断时用 run-advanced.bat（Linux / macOS 用 ./run-advanced.sh）。
 * 命令行等价写法：run.bat start / run.bat status / run.bat stop / run.bat logs。
 * 真实配置写在 data/config.json（首次启动自动生成），日志写在 logs/。
-* 校验和见同目录的 SHA256SUMS.txt。
+* 包内根目录固定为 AWFM/；升级 = 用新包覆盖 AWFM/，保留 data/config.json。
+* 校验和见发行目录的 SHA256SUMS.txt（包外；包内不写自身哈希，避免自指）。
 """
-
-
-def default_platform() -> str:
-    system = platform_module.system().lower()
-    machine = platform_module.machine().lower()
-    machine = {
-        "amd64": "x64",
-        "x86_64": "x64",
-        "arm64": "arm64",
-        "aarch64": "arm64",
-    }.get(machine, machine)
-    return system + "-" + machine
 
 
 def _excluded(path: Path) -> bool:
@@ -129,7 +130,7 @@ def write_text(path: Path, text: str, *, newline: str) -> None:
     path.write_text(text, encoding="utf-8", newline=newline)
 
 
-def build_stage(stage: Path, version: str, target_platform: str, built_at: datetime.datetime) -> int:
+def build_stage(stage: Path, version: str, built_at: datetime.datetime) -> int:
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
@@ -144,7 +145,6 @@ def build_stage(stage: Path, version: str, target_platform: str, built_at: datet
         VERSION_TEMPLATE.format(
             version=version,
             built_at=built_at.isoformat(timespec="seconds"),
-            platform=target_platform,
             python=sys.version.split()[0],
             root=str(ROOT),
         ),
@@ -153,7 +153,7 @@ def build_stage(stage: Path, version: str, target_platform: str, built_at: datet
     return count + 1
 
 
-def write_manifest(stage: Path, version: str, target_platform: str, built_at: datetime.datetime) -> list:
+def write_manifest(stage: Path, version: str, built_at: datetime.datetime) -> list:
     entries = []
     for path in sorted(stage.rglob("*")):
         if not path.is_file() or path.name == "MANIFEST.json":
@@ -163,10 +163,11 @@ def write_manifest(stage: Path, version: str, target_platform: str, built_at: da
     manifest = {
         "project": "AWFM",
         "version": version,
-        "platform": target_platform,
+        "runtime": "Python 3.10+",
+        "package_root": PACKAGE_ROOT + "/",
         "generated_at": built_at.isoformat(timespec="seconds"),
         "python": sys.version.split()[0],
-        "note": "便携版只含运行所需文件：不含 tests/、data/、logs/；零第三方依赖。",
+        "note": "便携版只含运行所需文件：不含 tests/、data/、logs/；零第三方依赖；解压根目录固定为 AWFM/。",
         "file_count": len(entries),
         "files": entries,
     }
@@ -179,10 +180,10 @@ def write_manifest(stage: Path, version: str, target_platform: str, built_at: da
 
 
 def write_zip(stage: Path, zip_path: Path) -> int:
-    """把暂存目录压成 zip；成员名统一带一层 <包名>/ 前缀。
+    """把暂存目录压成 zip；成员名统一带一层固定的 AWFM/ 前缀。
 
-    带前缀的理由：用户解压时不会把 app/ frontend/ docs/ 等目录散落到当前目录里，
-    目录结构也与 docs/RELEASE.md 第 2 节画的树完全一致。
+    前缀不随版本号变化：解压 v0.1.4 时仍然落在 AWFM/，不会与旧版本的 AWFM-0.1.3/ 并排，
+    用户也不必每次升级都换目录；同时 app/ frontend/ docs/ 不会散落到当前目录。
     """
     if zip_path.exists():
         zip_path.unlink()
@@ -190,7 +191,7 @@ def write_zip(stage: Path, zip_path: Path) -> int:
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in members:
             relative = path.relative_to(stage).as_posix()
-            member = stage.name + "/" + relative
+            member = PACKAGE_ROOT + "/" + relative
             info = zipfile.ZipInfo(member, date_time=ZIP_TIMESTAMP)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (0o755 if relative.endswith(".sh") else 0o644) << 16
@@ -200,20 +201,25 @@ def write_zip(stage: Path, zip_path: Path) -> int:
 
 def verify_zip(zip_path: Path, entries: list) -> list:
     problems = []
-    prefix = zip_path.stem + "/"
+    prefix = PACKAGE_ROOT + "/"
     expected = {prefix + item["path"]: item["sha256"] for item in entries}
     with zipfile.ZipFile(zip_path) as archive:
         broken = archive.testzip()
-        actual = {name: hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist()}
+        names = archive.namelist()
+        actual = {name: hashlib.sha256(archive.read(name)).hexdigest() for name in names}
     if broken:
         problems.append("压缩包内有损坏成员：" + str(broken))
+    for path in sorted(names):
+        if not path.startswith(prefix):
+            problems.append("压缩包成员不在 " + PACKAGE_ROOT + "/ 根目录下：" + path)
     for path, digest in sorted(expected.items()):
         if path not in actual:
             problems.append("压缩包缺少成员：" + path)
         elif actual[path] != digest:
             problems.append("内容与清单不一致：" + path)
     for path in sorted(set(actual) - set(expected) - {prefix + "MANIFEST.json"}):
-        problems.append("清单外的成员：" + path)
+        if path.startswith(prefix):
+            problems.append("清单外的成员：" + path)
     return problems
 
 
@@ -231,16 +237,18 @@ def check_required(stage: Path) -> list:
         "MANIFEST.json",
         "run.bat",
         "run.sh",
+        "run-advanced.bat",
+        "run-advanced.sh",
     )
     return [name for name in required if not (stage / name).is_file()]
 
 
-def write_sums(dist: Path, version: str, target_platform: str, built_at: datetime.datetime, zip_name: str, zip_digest: str, manifest_digest: str, manifest_name: str) -> Path:
+def write_sums(dist: Path, version: str, built_at: datetime.datetime, zip_name: str, zip_digest: str, manifest_digest: str, manifest_name: str) -> Path:
     lines = [
-        "# AWFM " + version + "（" + target_platform + "）发行校验和",
+        "# AWFM " + version + " 发行校验和（运行环境：Python 3.10+）",
         "# 生成时间：" + built_at.isoformat(timespec="seconds"),
-        "# 校验方式：certutil -hashfile <文件> SHA256   或   Get-FileHash -Algorithm SHA256 <文件>",
-        "# 说明：便携包内每个文件的 SHA-256 见 " + manifest_name,
+        "# 校验方式：sha256sum <文件>（Linux/macOS）；Get-FileHash -Algorithm SHA256 <文件> 或 certutil -hashfile <文件> SHA256（Windows）",
+        "# 说明：便携包根目录固定为 AWFM/；包内每个文件的 SHA-256 见 " + manifest_name,
         "# 说明：VERSION 里带构建时间，所以重新打包时该文件与压缩包哈希会变；其余文件只随源码变化。",
         "",
         zip_digest + "  " + zip_name,
@@ -263,7 +271,6 @@ def human_size(size: int) -> str:
 def main(argv: list) -> int:
     parser = argparse.ArgumentParser(prog="package", description="打包 AWFM 便携版发行包。")
     parser.add_argument("--out", metavar="DIR", help="输出目录（默认 dist/）")
-    parser.add_argument("--platform", metavar="TAG", help="平台标签（默认按当前主机推断，如 windows-x64）")
     parser.add_argument("--skip-checks", action="store_true", help="跳过静态校验")
     args = parser.parse_args(argv)
 
@@ -271,17 +278,22 @@ def main(argv: list) -> int:
     if not version:
         print("[失败] 无法从 app/__init__.py 读出 __version__。", file=sys.stderr)
         return 2
-    target_platform = args.platform or default_platform()
     dist = Path(args.out).resolve() if args.out else ROOT / "dist"
     dist.mkdir(parents=True, exist_ok=True)
-    stage = dist / ("AWFM-" + version + "-" + target_platform)
-    zip_path = dist / (stage.name + ".zip")
+    stage = dist / PACKAGE_ROOT
+    zip_path = dist / ("AWFM-" + version + ".zip")
 
     print("AWFM 便携版打包")
     print("项目根目录：" + str(ROOT))
-    print("版本：" + version + "；平台标签：" + target_platform)
+    print("版本：" + version)
+    print("包根目录：" + PACKAGE_ROOT + "/（固定，不随版本变化）")
     print("输出目录：" + str(dist))
     print()
+
+    if (stage / "data").exists() or (stage / "logs").exists():
+        print("[失败] 暂存目录里有运行数据：" + str(stage))
+        print("       先停止从该目录启动的服务，再把 data/ 与 logs/ 移走（或删除整个暂存目录），然后重新打包。")
+        return 2
 
     if not args.skip_checks:
         print("第 1 步：静态校验（scripts/build.py）")
@@ -299,9 +311,9 @@ def main(argv: list) -> int:
         print()
 
     built_at = datetime.datetime.now()
-    print("第 2 步：暂存目录树 -> " + stage.name)
-    copied = build_stage(stage, version, target_platform, built_at)
-    entries = write_manifest(stage, version, target_platform, built_at)
+    print("第 2 步：暂存目录树 -> " + PACKAGE_ROOT + "/")
+    copied = build_stage(stage, version, built_at)
+    entries = write_manifest(stage, version, built_at)
     print("  复制 " + str(copied) + " 个文件（含 run.bat / run.sh / VERSION），清单 " + str(len(entries)) + " 项。")
 
     missing = check_required(stage)
@@ -327,12 +339,11 @@ def main(argv: list) -> int:
     sums = write_sums(
         dist,
         version,
-        target_platform,
         built_at,
         zip_path.name,
         zip_digest,
         manifest_digest,
-        stage.name + "/MANIFEST.json",
+        PACKAGE_ROOT + "/MANIFEST.json",
     )
 
     total = sum(item["size"] for item in entries)

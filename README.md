@@ -1,8 +1,12 @@
 # Aimu's Web File Manager (AWFM)
 
+> **项目性质：AI 性能测试项目。** 本仓库用于评测 AI 在给定规格下完成「需求 → 实现 → 测试 → 发行」
+> 全流程的工程能力；代码、测试与文档按真实项目标准组织，供复现与评审。产品本体是
+> Aimu's Web File Manager（AWFM）。
+
 > 本地部署的 SSH Web 文件管理工具 · 离线可用 · 零第三方依赖 · 开箱即用 · 过程透明
 
-AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**连接 Linux 目标机（虚拟机或服务器），
+AWFM 运行在你的本机（Windows / Linux / macOS）上，通过 **系统 OpenSSH 客户端**连接 Linux 目标机（虚拟机或服务器），
 把目标机的文件系统以浏览器界面呈现出来。服务端**只用 Python 3 标准库**，前端是**原生 HTML/CSS/JS**，
 不联网、不装数据库、不装容器。
 
@@ -11,7 +15,7 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 | 当前版本 | `v0.1.3`（在 v0.1.2 基础上完成五项需求：行内操作区独立容器与固定顺序、文件信息列独立布局、预览独立框、新建文件/文件夹与多选批量（含复制/剪切/粘贴）、启动脚本拆普通与高级且就绪后自动开浏览器） |
 | 运行时依赖 | **0 个第三方 Python 包**（系统 OpenSSH 客户端视为环境前提） |
 | 测试状态 | 单元 680 / 集成 147 / 安全 82 / 端到端 39，合计 **948 项全部通过**（0 失败 / 0 错误 / 1 跳过为 Windows 平台跳过；见 [docs/reports/PHASE-D-RELEASE-v013.md](docs/reports/PHASE-D-RELEASE-v013.md)） |
-| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.3-windows-x64.zip`（见 [docs/RELEASE.md](docs/RELEASE.md)） |
+| 发行包 | `python scripts/package.py` → `dist/AWFM-0.1.3.zip`（成员统一带固定的 `AWFM/` 根目录；见 [docs/RELEASE.md](docs/RELEASE.md)） |
 
 ---
 
@@ -49,13 +53,14 @@ AWFM 运行在你的 Windows 宿主机上，通过 **系统 OpenSSH 客户端**�
 
 ```powershell
 # 1. 启动本地服务（默认只监听 127.0.0.1:32579，首次运行使用内置默认配置）
-run.bat                     # 不带参数 = 交互菜单：启动 / 状态 / 停止 / 日志 / 自检
-run.bat start               # 直接后台启动（Linux / macOS 用 ./run.sh start）
+run.bat                     # 不带参数 = 启动（就绪后自动开浏览器；Ctrl+C 停止）
+run.bat start               # 显式后台启动（Linux / macOS 用 ./run.sh start）
+run-advanced.bat            # 不带参数 = 交互菜单：启动 / 状态 / 停止 / 日志 / 自检
 
 # 2. 浏览器打开
 #    http://127.0.0.1:32579/
 
-# 3. 其它常用命令（实现都在 scripts/launcher.py，Windows 与 Linux 行为一致）
+# 3. 其它常用命令（实现都在 scripts/launcher.py，Windows / Linux / macOS 行为一致）
 run.bat status              # 运行状态、地址与进程号
 run.bat stop                # 停止（只停 AWFM 自己的进程，未确认不强制终止）
 run.bat logs                # 看服务日志
@@ -71,8 +76,8 @@ python app\main.py --init-config
 
 ## 系统要求
 
-- **宿主机**：Windows 10/11 x64，Python 3.10+（实测 3.12.10）
-- **OpenSSH 客户端**：Windows 自带的 `ssh.exe` / `sftp.exe` / `ssh-keygen.exe`（实测 OpenSSH_for_Windows 9.5p2）
+- **宿主机**：Windows / Linux / macOS，Python 3.10+（Windows 11 + Python 3.12.10、WSL2 Ubuntu 24.04 已实测；macOS 走同一启动器分支，未实测）
+- **OpenSSH 客户端**：系统自带的 `ssh` / `sftp` / `ssh-keygen`（Windows 10 1809+ 自带 OpenSSH_for_Windows，实测 9.5p2）
 - **目标机**：Linux，启用 `sshd` 与 SFTP 子系统（集成测试实测环境为 Ubuntu 24.04.2 上的非 root `sshd`）
 - **网络**：宿主机与目标机互通即可，**全程不需要互联网**
 

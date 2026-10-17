@@ -87,6 +87,7 @@ aimus-web-file-manager/
 | 脚本 | 动词开头 + 小写下划线：`build_portable.py` | `test.bat`、`run.py` |
 | 前端资源 | 小写 + 连字符：`file-list.js` | `fileList.js`、`new.js` |
 | 文档 | 大写下划线：`TEST_REPORT.md`；报告 `PHASE-03-CORE.md` | `新建文档.md` |
+| 发行包 | `AWFM-<版本>.zip`；解压根目录固定 `AWFM/` | `-windows-x64` 等平台后缀、带版本号的根目录 |
 | 截图 | `截图<两位序号>-<内容>.png` | UUID 名、系统默认名 |
 | 目录 | 英文小写 + 连字符 | 中文目录名、`新建文件夹`、`temp` |
 
