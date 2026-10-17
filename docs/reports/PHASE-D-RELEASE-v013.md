@@ -162,7 +162,7 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 | 9e419f1 | 发布后修正（第一轮）：表格表头对齐、列宽改 px、宽屏加宽档、断点重排、单测断言，以及 CHANGELOG / RELEASE / 本报告的同步（版本号仍 0.1.3，不升 0.1.4）；5 个文件，+136 −36 | 交付后修正（见 §10） |
 | 7baa0a1 | 发布后修正（第二轮）：按钮文字居中、大小与类型拉开距离、权限改八进制 + 悬浮字符形式、发行包重建与文档同步（版本号仍 0.1.3）；7 个文件，+167 −25 | 交付后修正（见 §11） |
 | b731ec1 | 收尾：把 9e419f1 / 7baa0a1 与第二轮发行包数字回写进本报告 §9 与 CHANGELOG 状态行 | 收尾 |
-| 本行所在提交 | 发布后修正（第三轮）：启动脚本与四个入口的输出文案改为「启动 / 菜单」术语、两字标签排版、`field()`/`short_path()`/`pad_width()` 与 `flush=True`，自检标题去重；同步 `USER_GUIDE` / `RELEASE` / `CHANGELOG` / `AGENTS.md` / 本报告 §12，并重建发行包（版本号仍 0.1.3）；见 §12 | 交付后修正（见 §12） |
+| e9eb32c | 发布后修正（第三轮）：启动脚本与四个入口的输出文案改为「启动 / 菜单」术语、两字标签排版、`field()`/`short_path()`/`pad_width()` 与 `flush=True`，自检标题去重；同步 `USER_GUIDE` / `RELEASE` / `CHANGELOG` / `AGENTS.md` / 本报告 §12，并重建发行包（版本号仍 0.1.3）；见 §12 | 交付后修正（见 §12） |
 | 本行所在提交 | 收尾：把第三轮提交哈希与 15:43 发行包数字回写进本报告 §8/§9 与 CHANGELOG 状态行 | 收尾 |
 
 **为什么没有把「界面优化」和「新建/多选」拆成两个提交**：两者落在同一批文件（frontend/index.html、app.css、files.js、app.js、fileops.js、state.js、api.js）的相邻 hunk 里，拆分需要 hunk 级 staging 且无法在本机复跑中间态，因此合并为一个「界面与交互」提交并在本表如实标注，符合任务书 §7「拆不开就合并并说明」的要求。
@@ -317,7 +317,8 @@ AWFM 0.1.3  统一启动器
 
 - `python -X utf8 -m unittest discover -s tests/unit -t .` → **685 项 OK**（1 项 Windows 平台跳过）；`tests.unit.test_run_bat` **17 项 OK**；`tests.integration.test_launcher_lifecycle` **18 项 OK**（111.6s）。
 - 测试侧同步：`test_run_bat.py` 的入口说明改为「启动入口 / 菜单入口」；`test_launcher.py` 的 quick 用例改为断言横幅 + `start` 事件 + `pause`（报告实际由 `cmd_start` 打印且被 mock）；浏览器打不开的用例改断言「请手动在浏览器里打开上面的地址。」；生命周期集成里陈旧 PID 的断言改为 `未运行` + `PID 文件已陈旧`。
-- **未重跑**：`tests.e2e` 与 `tests/security` 与本轮无关（改动只在启动器输出文案与外壳注释上），§3 的 948 项统计仍是阶段 D 全量回归的结果。
+- **`tests.e2e` 已重跑**：三套（`test_browser_layout` / `test_browser_sidebar` / `test_browser_v013`）**19 项 OK（86.7s）**。第一次重跑时 15 个用例在 `browser_session()` 里报 `RuntimeError: Edge 调试端口 1511 在 60.0s 内不可用：ConnectionRefused`（`tests/e2e/support.py:304`）——同一时刻单独起一次 headless Edge（`--headless=new` + 临时 `--user-data-dir` + /json/list）能正常返回 200，判断是浏览器启动抖动（当时桌面 Edge 有 32 个进程在跑），与本次改动无关；随后重跑即全绿。
+- **未重跑**：`tests/security` 与本轮无关（改动只在启动器输出文案与外壳注释上），§3 的 948 项统计仍是阶段 D 全量回归的结果。
 - **CU 证据口径**：§4 的 14 条 CU 证据是改词之前拍的，截图里仍是旧文案，保留作当轮验收的历史记录，不作为本轮证据；本轮证据即 12.4 的渲染样例。
 - **发行包**：`python scripts/build.py` 8 项通过后 `python scripts/package.py` 重建（2026-10-17 15:43），并在 `.temp/pkg-test/AWFM 0.1.3 六次验收/`（路径含空格）跑完 `check → start --port 8796 --no-browser → GET / → GET /api/health → status → stop`，退出码全 0、端口 8796 监听归 0；文件数、字节数与 SHA-256 见 §8。
 - **顺带修的两处输出问题**：`say/ok/info/warn/fail/field` 的 `print` 统一加 `flush=True`——原先 `cmd_check` 先打印自己的检查、再 `subprocess.run(app/main.py --check)`，子进程直写控制台而父进程 stdout 有缓冲，实际顺序会颠倒；`cmd_check` 的标题由 `AWFM 自检` 改成 `AWFM 0.1.3  启动前检查`，避免与 `app/main.py --check` 的 `AWFM 0.1.3 自检` 撞名（实测顺序已稳定：前置检查 → 分隔提示 → 应用自检 → `[ OK ] 自检通过。`）。
