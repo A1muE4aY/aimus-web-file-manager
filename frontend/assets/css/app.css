@@ -906,7 +906,9 @@ td.col-dir {
 #file-table col.col-name { width: auto; }
 #file-table col.col-size { width: 96px; }
 #file-table col.col-type { width: 88px; }
-#file-table col.col-perm { width: 104px; }
+/* 权限列显示八进制数字（755 / 4755），不再放 drwxr-xr-x 那十个字符，所以比
+   字符形式窄一截；字符形式在悬浮提示里。 */
+#file-table col.col-perm { width: 92px; }
 #file-table col.col-time { width: 148px; }
 #file-table col.col-action { width: 352px; }
 
@@ -921,6 +923,13 @@ td.col-dir {
 /* 表头跟着数值一起右对齐：数值本来就是右对齐（个位、KiB/MiB 才对得齐），
    表头留在左边就变成「表头在最左、数字贴最右」，一眼看过去就是没对齐。 */
 #file-table thead th.col-size { text-align: right; }
+
+/* 「大小」右数字与「类型」两字之间只隔了单元格的两道内边距（10 + 10 = 20px），
+   并且大小是右对齐、类型是左对齐，两边的空白全压在这一处，看着就挤在一起。
+   类型列本身有富余（「文件」两字只占 23px，列宽 88/108px），所以把多出来的
+   位置让给左内边距：数字与类型之间变成 30px，表头与数值仍然同一左边界。 */
+#file-table th.col-type,
+#file-table td.col-type { padding-left: 20px; }
 
 /* 七个动作恒常占七个槽位，顺序固定 编辑→复制→剪切→重命名→删除→压缩→解压。
    按钮按 DOM 顺序落格，不写 grid-column：槽位数固定，于是同一个动作在任何一行、
@@ -946,6 +955,11 @@ td.col-dir {
   padding: 0;
   font-size: 11.5px;
   line-height: 22px;
+  /* 文字没居中的根因（v0.1.3 发布后实测，偏移正好 11.5px = (48-2-23)/2）：
+     .btn 是 inline-flex，按钮里的文字成了**匿名 flex 项**，而 text-align 管不动
+     flex 项的位置 —— 项默认从 flex-start 排起，所以字贴着左边。真正的开关是
+     justify-content。 */
+  justify-content: center;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
@@ -1164,14 +1178,14 @@ td.col-dir {
 }
 
 /* 宽窗口（≥1600px CSS 视口）：信息列各加一些宽度，槽位从 44px 放到 48px。
-   够宽的时候没有必要让名字列独占余量 —— 「2026-10-17 14:03」「drwxr-xr-x」
-   挤在 96/104px 里只有 10px 内边距，读起来像贴着列线；多出来的位置给它们，
+   够宽的时候没有必要让名字列独占余量 —— 「2026-10-17 14:03」「755」
+   挤在 96/92px 里只有 10px 内边距，读起来像贴着列线；多出来的位置给它们，
    名称列仍然弹性，只是不再一家独大。加宽档只在 1600 以上生效，所以窄窗口
    的收列节奏（1240 / 1120 / 1000 / 880 / 740）不受影响。 */
 @media (min-width: 1600px) {
   #file-table col.col-size { width: 120px; }
   #file-table col.col-type { width: 108px; }
-  #file-table col.col-perm { width: 136px; }
+  #file-table col.col-perm { width: 104px; }
   #file-table col.col-time { width: 190px; }
   #file-table col.col-action { width: 380px; }
   #file-table .file-actions-box { grid-template-columns: repeat(7, 48px); }

@@ -104,10 +104,40 @@ class TableStructureTests(unittest.TestCase):
         # 注意：文件里另有一处注释也提到 "@media (min-width: 1600px)"，
         # 所以起点带上左花括号，才不会从那条注释开始截。
         block = locate(css, "@media (min-width: 1600px) {", "在线虚拟机发现", "宽屏档")
-        for column, width in (("col-size", 120), ("col-type", 108), ("col-perm", 136), ("col-time", 190)):
+        for column, width in (("col-size", 120), ("col-type", 108), ("col-perm", 104), ("col-time", 190)):
             rule = re.search(r"\.%s\s*\{\s*width:\s*(\d+)px" % column, block)
             self.assertIsNotNone(rule, "宽屏档里没有 %s 的列宽" % column)
             self.assertEqual(int(rule.group(1)), width, "宽屏档里 %s 的列宽与设计不一致" % column)
+
+    def test_type_column_keeps_its_distance_from_the_size_numbers(self):
+        # 发布后实测：大小右对齐、类型左对齐，两边的空白全压在列边界上，看着挤在一起。
+        # 类型列本身有富余（「文件」两字 23px），多给 10px 左内边距，表头跟着数值一起挪。
+        css = read(CSS)
+        match = re.search(
+            r"#file-table th\.col-type,\s*#file-table td\.col-type\s*\{([^}]*)\}", css
+        )
+        self.assertIsNotNone(match, "类型列没有单独的内边距规则")
+        self.assertIn("padding-left: 20px", match.group(1), "类型列没有和大小拉开距离")
+
+    def test_permission_column_shows_octal_digits_and_the_characters_on_hover(self):
+        # 用户要求（v0.1.3 发布后）：权限改成数字，字符形式光标移上去再看。
+        util = read(JS / "util.js")
+        self.assertIn("export function formatPermissionOctal(entry)", util,
+                      "util.js 里没有八进制权限格式化函数")
+        self.assertIn('digits.padStart(3, "0")', util, "三位数要补零，000 不能显示成 0")
+
+        source = read(JS / "files.js")
+        row = locate(source, "function rowNode(entry)", "function actionCell(entry)", "rowNode")
+        self.assertIn('class: "col-perm", text: formatPermissionOctal(entry)', row,
+                      "权限列没有改成八进制数字")
+        hint = locate(source, "function permissionHint(cell, entry)", "export const ACTION_ORDER",
+                      "permissionHint")
+        self.assertIn("formatPermissions(entry)", hint, "提示里没有字符形式的权限")
+        self.assertIn("showTooltip(symbolic, cell)", hint, "字符形式没有挂到悬浮提示上")
+
+        css = read(CSS)
+        self.assertIn("col.col-perm { width: 92px; }", css,
+                      "权限列还是字符形式的宽度（92px 是三位数字的列宽）")
 
 
 class ActionSlotTests(unittest.TestCase):
@@ -172,6 +202,12 @@ class ActionSlotTests(unittest.TestCase):
         self.assertIn("line-height: 22px", button, "按钮文字没有统一基线")
         self.assertIn("text-align: center", button)
         self.assertIn("padding: 0", button, "按钮内边距不统一就会有的高一点")
+
+    def test_button_labels_are_centred_instead_of_pushed_left(self):
+        # 发布后实测：.btn 是 inline-flex，按钮里的文字是匿名 flex 项，text-align 管不动
+        # 它的位置，于是一律左偏 11.5px（(48-2-23)/2）。居中的开关是 justify-content。
+        button = css_block(self.css, "#file-table .file-actions-box .btn")
+        self.assertIn("justify-content: center", button, "按钮文字没有在按钮里居中")
 
     def test_old_five_slot_layout_is_gone(self):
         for path in (CSS, JS / "files.js"):

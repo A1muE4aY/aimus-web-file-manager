@@ -219,6 +219,20 @@ export function formatPermissions(entry) {
   return chars.join("");
 }
 
+/**
+ * 权限位 → 八进制数字（`755` / `4755`），列表里只显示这一列数字。
+ *
+ * 字符形式（`-rw-r--r--`）信息量大但占地方，扫一眼只需要知道「读得改不得」；
+ * 完整字符形式由 formatPermissions() 出，挂到单元格的悬浮提示上。
+ * 特殊位（setuid/setgid/sticky）有值时才显示第四位，与 `stat -c %a` 一致。
+ */
+export function formatPermissionOctal(entry) {
+  const perms = entry && typeof entry.permissions === "number" ? entry.permissions : null;
+  if (perms === null) return "—";
+  const digits = (perms & 0o7777).toString(8);
+  return digits.length >= 4 ? digits : digits.padStart(3, "0");
+}
+
 /** 把分片路径显示成面包屑，末段返回 null 让调用方决定要不要省略。 */
 export function unknownErrorMessage(error) {
   if (error && error.name === "AbortError") return "已取消。";

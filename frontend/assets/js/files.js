@@ -15,6 +15,7 @@ import {
   formatSize,
   formatTime,
   formatPermissions,
+  formatPermissionOctal,
   typeLabel,
   isArchiveName,
 } from "./util.js";
@@ -471,7 +472,10 @@ function rowNode(entry) {
     })
   );
   row.appendChild(h("td", { class: "col-type", text: typeLabel(entry.type) }));
-  row.appendChild(h("td", { class: "col-perm", text: formatPermissions(entry) }));
+  // 权限列平时只显示八进制数字，十位字符形式留给悬浮提示（见 permissionHint）。
+  const permCell = h("td", { class: "col-perm", text: formatPermissionOctal(entry) });
+  permissionHint(permCell, entry);
+  row.appendChild(permCell);
   row.appendChild(
     h("td", {
       class: "col-time",
@@ -489,6 +493,28 @@ function rowNode(entry) {
     activate(entry);
   });
   return row;
+}
+
+/**
+ * 「权限」列：平时只显示八进制数字（`755` / `4755`），悬浮时才给字符形式。
+ *
+ * 为什么改数字：`drwxr-xr-x` 这种十位字符把这一列撑到一百多像素，而扫列表时
+ * 真正要判断的只有「读得、写得、别人能不能进」三件事，三位数字就够；字符形式
+ * 留在提示里，需要细看时再把光标移上去。
+ *
+ * 提示用自绘的 showTooltip 而不是 `title` 属性：原生 title 要悬停一秒才出、样式
+ * 也跟界面不一致，而这里和名称列的完整名称提示共用一套浮层（overlay.js）。
+ */
+function permissionHint(cell, entry) {
+  const symbolic = formatPermissions(entry);
+  if (symbolic === "—") return;
+  cell.setAttribute("aria-label", "权限 " + symbolic);
+  cell.addEventListener("mouseenter", function () {
+    showTooltip(symbolic, cell);
+  });
+  cell.addEventListener("mouseleave", function () {
+    hideTooltip(cell);
+  });
 }
 
 /**

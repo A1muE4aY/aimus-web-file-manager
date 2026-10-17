@@ -128,23 +128,25 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 
 | 项 | 值 |
 |---|---|
-| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖；v0.1.3 的 zip 在「发布后界面微调」之后重新构建，本节数字来自**产出这份 zip 的最终构建**） |
-| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（111 个文件 / 1,730,284 字节，含 MANIFEST.json；清单 file_count=110） |
-| zip 大小 | 715,605 字节（698.8 KB），成员 111 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
-| **SHA-256** | 9b3f9bb4349dd176ebca740769421a67d7009a84ac20dfe11631dc64b3355c4e |
-| 双工具复核 | Get-FileHash -Algorithm SHA256 → 9B3F9BB4…55C4E；certutil -hashfile … SHA256 → 9b3f9bb4…55c4e，一致 |
-| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（0d46a8a02f8297d6ef747f1ee2a543e1638ae8ca69f5a3278c3dfbb43600b383） |
+| 便携包 | dist/AWFM-0.1.3-windows-x64.zip（v0.1.0 / v0.1.1 / v0.1.2 的 zip 保留未覆盖；v0.1.3 的 zip 在「发布后界面微调」两轮之后重新构建，本节数字来自**产出这份 zip 的最终构建**，2026-10-17 15:18） |
+| 解压后目录 | dist/AWFM-0.1.3-windows-x64/（111 个文件 / 1,740,808 字节，含 MANIFEST.json；清单 file_count=110） |
+| zip 大小 | 719,611 字节（702.7 KB），成员 111 个，成员名统一带 AWFM-0.1.3-windows-x64/ 前缀 |
+| **SHA-256** | ca235f4922b7f5afee3534d71962971b05cd60bb68d1eab2b4cd1ae031730641 |
+| 双工具复核 | Get-FileHash -Algorithm SHA256 → CA235F49…30641；certutil -hashfile … SHA256 → ca235f49…730641，一致 |
+| 校验清单 | dist/SHA256SUMS.txt（不在包内）：zip 哈希 + MANIFEST.json 哈希（73335f14ad03da63551a61e654f81bcc85e1964ef0da210281930c5d53463ee6） |
 
-**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 三次验收/，解压的就是上表这份 zip）：
+**独立目录验收**（路径含空格：.temp/pkg-test/AWFM 0.1.3 四次验收/，用 `Expand-Archive` 解压的就是上表这份 zip）：
 
 - run.bat check → 退出码 0（8 项自检通过：Python / 依赖 / 端口空闲 / 前端资源 / 日志目录可写 / 配置 / 主机密钥策略 / 自检 --check）
-- run.bat start --port 8793 --no-browser → 退出码 0，版本 0.1.3，PID 32936，启动时间 2026-10-17T14:24:14+08:00
+- run.bat start --port 8794 --no-browser → 退出码 0，版本 0.1.3，PID 9092，启动时间 2026-10-17T15:19:27+08:00
 - GET / → 200，9371 字节
 - GET /api/health → 200，status ok、version 0.1.3、connections 0；响应头 Server: AWFM/0.1.3
-- run.bat status → 退出码 0，显示 PID 32936 / 端口 8793 / 启动时间 / 版本 0.1.3
-- run.bat stop --force --yes → 退出码 0（`已强制终止（taskkill /F，含子进程）`），端口 8793 监听数归 0
+- run.bat status → 退出码 0，显示 PID 9092 / 端口 8794 / 启动时间 / 版本 0.1.3
+- run.bat stop --force --yes → 退出码 0（`已强制终止（taskkill /F，含子进程）`），端口 8794 监听数归 0
 
-包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T14:23:34 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明已改为「双击 run.bat 即普通启动、就绪后自动开浏览器；菜单用 run-advanced.bat」。
+包内 VERSION：AWFM 0.1.3 / 构建时间 2026-10-17T15:18:44 / 目标平台 windows-x64 / 构建主机 Python 3.12.10；便携说明已改为「双击 run.bat 即普通启动、就绪后自动开浏览器；菜单用 run-advanced.bat」。
+
+**与中间构建的差异**：本交付里 zips 先后重建过四次，前三次的目录树分别含 110、111、111 个文件。那两次多出来的 1 个文件是留在 `dist/AWFM-0.1.3-windows-x64/` 里运行的端到端遗留进程写下的 `logs/awfm-console.log`。它同时也是重打包失败的原因：只要还有进程的当前目录在那个暂存目录里，`shutil.rmtree` 就报 `PermissionError: [WinError 32] 另一个程序正在使用此文件`（本轮先后两次撞上，第二次的占用者是遗留的 `cmd.exe → run.bat` 与 `app/main.py`）。最终构建前先把遗留的 `run.bat` / `app/main.py` 进程清掉，暂存目录里不再有 `logs/`，文件数回到 110（+ `MANIFEST.json` = 111）。
 
 **自引用说明**：`docs/` 在包里，而本节要记录包自身的字节数与哈希，两者无法与自身完全闭合——上表记录的是产出这份 zip 的那次构建，如果之后又改过 `docs/`，以包外的 `dist/SHA256SUMS.txt` 为准。
 
@@ -167,7 +169,7 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 
 ## 10. 发布后界面微调：表格对齐与信息列宽度（v0.1.3，不升版本号）
 
-交付之后用户报告：文件列表「对不准、非居中」，并希望信息列（大小 / 类型 / 权限 / 修改时间）多给一些宽度。按用户要求**版本号保持 0.1.3**，不引入 0.1.4。
+交付之后用户报告：文件列表「对不准、非居中」，并希望信息列（大小 / 类型 / 权限 / 修改时间）多给一些宽度。按用户要求**版本号保持 0.1.3**，不引入 0.1.4。（本节记的是第一轮；第二轮的三处修正见 §11，权限列宽度在那里又收窄了一档，两节按时间顺序读。）
 
 ### 10.1 两条根因（都是实测出来的，不是猜的）
 
@@ -204,4 +206,53 @@ CU 驱动本身的限制（**只影响取证方式，不影响产品结论**）�
 - **未重跑的部分**：集成层、安全层与其余端到端模块本轮没有重跑（改动只落在 CSS 与一份布局单测上，接口、服务端与启动脚本没有动）。§3 的 948 项统计仍是阶段 D 那次全量回归的结果，本节不重述。
 - **静态资源缓存**：静态响应已经带 `Cache-Control: no-store`（`app/api/responses.py:37` 由 `security_headers()` 统一发出，实测 `/assets/css/app.css` 响应头确实有它），所以升级后刷新一次页面就能拿到新样式，不涉及缓存头改动。实测该响应体 45,072 字节、与工作区里的 `frontend/assets/css/app.css` 一致，说明服务端发的就是新文件。
 - **未做**：把静态资源改成带版本查询串（`?v=…`）留给下一个版本评估；本轮不改 URL 形式。
+
+## 11. 发布后界面微调（第二轮）：按钮居中、类型列间距、权限改八进制（v0.1.3，不升版本号）
+
+§10 的对齐修正交付后，用户又报了三处：操作列的按钮文字在按钮里不居中、大小与类型贴得太近、权限要改成数字（字符形式光标移上去再看）。仍按用户要求保持 0.1.3。
+
+### 11.1 三处根因（实测，不是猜的）
+
+1. **按钮文字左偏 11.5px。** `.btn` 是 `inline-flex`（`frontend/assets/css/app.css:483`），按钮里只有一段文字，于是它成了**匿名 flex 项**；`text-align: center` 管不动 flex 项的位置，项默认从 `flex-start` 排起。实测 48px 槽位（内容区 46px）里 23px 的两个字，文字包围盒中心比内容区中心偏左 11.5px = (46−23)/2；「重命名」34.5px 偏左 5.8px。判定依据是 `getComputedStyle(btn).justifyContent === "normal"`。
+2. **大小与类型贴在一起。** 大小列右对齐、类型列左对齐，两列各自的内边距（10px + 10px）全压在同一条列边界上，视觉上只剩 20px；而类型列本身有大片空余（「文件」两字 23px，列宽 88/108px）。
+3. **权限列是十位字符。** `drwxr-xr-x` 占满 104/136px 的列宽，而扫列表时真正要判断的只有「读得、写得、别人能不能进」三件事。
+
+### 11.2 改动
+
+| 位置 | 改法 |
+|---|---|
+| `frontend/assets/css/app.css` 的 `#file-table .file-actions-box .btn` | 加 `justify-content: center`，并在注释里写明「匿名 flex 项，text-align 管不动」这条根因 |
+| `frontend/assets/css/app.css` 新增 `#file-table th.col-type, #file-table td.col-type` | `padding-left: 20px`（表头与数值一起挪，仍同一左边界） |
+| `frontend/assets/css/app.css` 的 `#file-table col.col-perm` | 基准 104 → 92，宽屏档（≥1600px）136 → 104 |
+| `frontend/assets/js/util.js` | 新增并导出 `formatPermissionOctal(entry)`：`(perms & 0o7777).toString(8)`，不足三位补零，特殊位有值时才显示第四位（与 `stat -c %a` 一致） |
+| `frontend/assets/js/files.js` | 权限单元格改成 `formatPermissionOctal(entry)`；`permissionHint(cell, entry)` 用 `showTooltip`/`hideTooltip` 挂字符形式，并写入 `aria-label` |
+| `tests/unit/test_frontend_layout.py` | 新增三条断言（按钮 `justify-content: center`、类型列 20px 左内边距、权限列八进制 + 悬浮字符形式），宽屏档权限列宽度断言 136 → 104 |
+
+为什么提示用自绘浮层而不是原生 `title`：原生 title 要悬停约一秒才出、样式与界面不一致；自绘提示与名称列的「完整名称」提示共用 `overlay.js` 同一套浮层，进出即显。
+
+### 11.3 实测（无头 Edge 打开真实实例 `http://127.0.0.1:8760/`，测的是真实 DOM 的包围盒与元素宽度）
+
+| CSS 视口 | 表格宽 | 名称列 | 七枚按钮文字偏移 | 大小 → 类型 间距 | 权限（值 / 宽） | 被截断按钮 | 横向滚动 |
+|---|---|---|---|---|---|---|---|
+| 2048 | 1679 | 777 | 全 0 | 30px | 700 / 104 | 0 | 无 |
+| 1600 | 1231 | 329 | 全 0 | 30px | 700 / 104 | 0 | 无 |
+| 1500 | 1131 | 355 | 全 0 | 30px | 700 / 92 | 0 | 无 |
+| 1400 | 1031 | 255 | 全 0 | 30px | 700 / 92 | 0 | 无 |
+| 1240 | 871 | 215 | 全 0 | 30px | 权限列收起 | 0 | 无 |
+| 1120 | 751 | 197 | 全 0 | 类型列收起 | — | 0 | 无 |
+| 992 | 623 | 217 | 全 0 | — | — | 0 | 无 |
+| 880 | 511 | 175 | 全 0 | — | — | 0 | 无 |
+
+- 改前对照：七枚按钮偏移 −11.5 / −11.5 / −11.5 / −5.8 / −11.5 / −11.5 / −11.5，大小 → 类型 20px。
+- 权限数字与远端一致：目录 700 / 755、只读目录 555、文件 600 / 644（与 `ls -l` 对照）；悬浮提示实测返回 `drwx------`。
+- 名称列因权限列收窄而变宽：2048 视口 745 → 777，1600 视口 297 → 329。
+- 证据截图：`.temp/cu-layout/after-v2.png`（2048 视口）、`.temp/cu-layout/after-crop-info.png`（权限 + 按钮）、`.temp/cu-layout/after-crop-gap.png`（大小 → 类型间距）。
+
+### 11.4 回归范围与如实说明
+
+- `python -m unittest discover -s tests/unit -t .` → **685 项 OK**（1 项 Windows 平台跳过；本轮新增 3 条）。
+- `python -m unittest tests.e2e.test_browser_layout tests.e2e.test_browser_sidebar tests.e2e.test_browser_v013` → **19 项 OK**（80.1s）。
+- 集成层、安全层与其余端到端模块本轮没有重跑（改动只落在 CSS、两个前端模块与一份布局单测上，接口、服务端与启动脚本没有动）。
+- 静态资源仍由 `app/api/responses.py:37` 的 `Cache-Control: no-store` 兜住，升级后刷新一次即生效，不涉及缓存头改动。
+
 

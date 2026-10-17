@@ -64,11 +64,11 @@ python scripts\package.py
 → 以**固定时间戳**（1980-01-01）压缩成 zip（所以同样的输入能产出同样的字节）→ 用 `testzip()` 校验 CRC
 → 逐个文件比对其 SHA-256 与清单一致 → 检查有无清单外的成员。
 
-> **数字口径**：本节与下一节的数字来自 **v0.1.3 交付后的最终构建记录**（2026-10-17 14:23，构建主机 Python 3.12.10；同一交付内一共构建过三次，差异见 `docs/CHANGELOG.md` 的 v0.1.3 段）。本节记录的是**产出这份 zip 的那次构建**；由于 `docs/` 本身也在包里，文档要记录包自身的字节数与哈希就无法与自身完全闭合——最新一次构建的哈希以**包外**的 `dist/SHA256SUMS.txt` 为准；
+> **数字口径**：本节与下一节的数字来自 **v0.1.3 交付后的最终构建记录**（2026-10-17 15:18，构建主机 Python 3.12.10；同一交付内先后构建过多次，每次的数字与哈希差异见 `docs/CHANGELOG.md` 的 v0.1.3 段）。本节记录的是**产出这份 zip 的那次构建**；由于 `docs/` 本身也在包里，文档要记录包自身的字节数与哈希就无法与自身完全闭合——最新一次构建的哈希以**包外**的 `dist/SHA256SUMS.txt` 为准；
 脚本引用（`run.bat` / `run.sh` / `run-advanced.bat` / `run-advanced.sh` / `scripts/launcher.py`）与仓库当前结构一致。
 
-压缩包内共 **111 个文件**：清单 `MANIFEST.json` 的 `file_count` 是 **110**（清单不登记自身），加上 `MANIFEST.json` 自身正好 111；zip 成员数同为 111。
-目录树合计 **1,730,284 字节**（约 1.65 MiB），zip 压缩后 **715,605 字节**（698.8 KB）。
+压缩包内共 **111 个文件**：清单 `MANIFEST.json` 的 `file_count` 是 **110**（清单不登记自身），加上 `MANIFEST.json` 自身正好 111；zip 成员数同为 111。包内没有 `data/`、`logs/`、`dist/`：它们是运行时目录，只在首次启动后由程序自己创建。
+目录树合计 **1,740,808 字节**（约 1.66 MiB），zip 压缩后 **719,611 字节**（702.7 KB）。
 所有成员名统一带一层 `AWFM-0.1.3-windows-x64/` 前缀——解压时不会把 `app/`、`frontend/`、`docs/` 散落到当前目录，目录结构与本文第 2 节的树完全一致。
 （v0.1.2 的包是 104 个文件 / 1,519,434 字节 / zip 631,659 字节；v0.1.3 的增量来自新增的 `run-advanced.bat`、`run-advanced.sh`、`tests/unit/test_frontend_layout.py` 与界面/接口改动带来的源码增长——测试文件本身不进包，进包增长主要来自 `frontend/`、`app/` 与 `docs/`。第二次构建相对第一次多了 `docs/reports/PHASE-D-RELEASE-v013.md`（18 KB）与 `frontend/assets/css/app.css` 的对齐修复注释。）
 
@@ -76,7 +76,7 @@ python scripts\package.py
 
 `dist/SHA256SUMS.txt`（**不在包内**）记录本次构建的：
 
-- 便携包 `AWFM-0.1.3-windows-x64.zip` 的 SHA-256（本次构建：`9b3f9bb4349dd176ebca740769421a67d7009a84ac20dfe11631dc64b3355c4e`；`Get-FileHash` 得 `9B3F9BB4…55C4E`、`certutil` 得小写同值，双工具一致）；
+- 便携包 `AWFM-0.1.3-windows-x64.zip` 的 SHA-256（本次构建：`ca235f4922b7f5afee3534d71962971b05cd60bb68d1eab2b4cd1ae031730641`；`Get-FileHash` 得 `CA235F49…30641`、`certutil` 得小写同值，双工具一致）；
 - 清单 `MANIFEST.json` 的 SHA-256；
 - 两种校验方式：`certutil -hashfile <文件> SHA256` 或 `Get-FileHash -Algorithm SHA256`。
 
@@ -143,14 +143,14 @@ python scripts\test.py              # 四层测试
 
 | # | 验收项 | 结论 | 证据 |
 |---|---|---|---|
-| 1 | 干净环境成功启动 | 通过 | v0.1.3 阶段 D 把 **v0.1.3 的 zip** 解压到独立目录（路径含空格：`.temp/pkg-test/AWFM 0.1.3 独立验收/`）后跑完整流程：`run.bat check` 退出码 0（8 项自检通过、1 项警告：信任库尚未建立）→ `run.bat start --port 8791 --no-browser` 退出码 0（版本 0.1.3，PID 20884）→ `GET /` 200（9371 字节）→ `GET /api/health` 200 `{"ok":true,"data":{"status":"ok","version":"0.1.3","connections":0}}`，响应头 `Server: AWFM/0.1.3` → `run.bat status` 退出码 0 → `run.bat stop --force --yes` 退出码 0，端口 8791 监听数归 0（报告 `docs/reports/PHASE-D-RELEASE-v013.md` §4）。v0.1.2 的旧证据见 `docs/reports/PHASE-07-RELEASE-v012.md` §十 |
+| 1 | 干净环境成功启动 | 通过 | v0.1.3 阶段 D 把 **v0.1.3 的 zip** 解压到独立目录（路径含空格：`.temp/pkg-test/AWFM 0.1.3 四次验收/`）后跑完整流程：`run.bat check` 退出码 0（8 项自检通过、1 项警告：信任库尚未建立）→ `run.bat start --port 8794 --no-browser` 退出码 0（版本 0.1.3，PID 9092）→ `GET /` 200（9371 字节）→ `GET /api/health` 200 `{"ok":true,"data":{"status":"ok","version":"0.1.3","connections":0}}`，响应头 `Server: AWFM/0.1.3` → `run.bat status` 退出码 0 → `run.bat stop --force --yes` 退出码 0，端口 8794 监听数归 0（报告 `docs/reports/PHASE-D-RELEASE-v013.md` §8）。v0.1.2 的旧证据见 `docs/reports/PHASE-07-RELEASE-v012.md` §十 |
 | 2 | 界面不依赖外部 CDN 或在线字体 | 通过 | `scripts/build.py` 第 4 项 + `tests/security` 的 `OfflineFrontendTests`；端到端断言对外请求为空 |
 | 3 | 正确连接指定虚拟机并浏览文件 | 通过 | v0.1.1 阶段六真实桌面 CU 用**真机 CentOS Stream 10**（`192.168.170.128`）验证连接、指纹确认、浏览、检索、编辑与哈希核对（`docs/reports/PHASE-06-CU-ACCEPTANCE.md`）；v0.1.0 时此项在 WSL 测试床上验证 |
 | 4 | 主机密钥异常与认证失败处理正确 | 通过 | `tests/security/test_host_key.py`（未知/伪造/变化三种）；端到端第 2、3 条 |
 | 5 | 配置/日志/临时文件位置明确 | 通过 | 本文 §5 的表；启动自检打印位置（`app/main.py:207`） |
 | 6 | 无互联网条件下完成核心测试 | **降级通过** | 静态扫描零外部 URL、零第三方依赖、端到端对外请求为空；**未做系统级断网空载** |
 | 7 | 用户手册与发行包版本一致 | 通过 | 包内 `docs/USER_GUIDE.md`（头部版本 v0.1.3）、`docs/SSH_SETUP_GUIDE.md`、`VERSION` 与 `app/__init__.py` 同源打包；界面右上徽标、启动横幅与 `run.bat status` 均显示 `0.1.3`（阶段 D 独立目录验收实测：`AWFM 已启动（版本 0.1.3）`、`GET /` 页面状态条同版本） |
-| 8 | 版本号、构建记录和 SHA-256 校验和齐全 | 通过 | `VERSION`（0.1.3 / 2026-10-17T14:23:34 / windows-x64 / Python 3.12.10）、`MANIFEST.json`（110 项逐文件哈希）、`dist/SHA256SUMS.txt`；zip 的 SHA-256 `9b3f9bb4349dd176ebca740769421a67d7009a84ac20dfe11631dc64b3355c4e` 用 `Get-FileHash` 与 `certutil` 独立复核一致 |
+| 8 | 版本号、构建记录和 SHA-256 校验和齐全 | 通过 | `VERSION`（0.1.3 / 2026-10-17T15:18:44 / windows-x64 / Python 3.12.10）、`MANIFEST.json`（110 项逐文件哈希）、`dist/SHA256SUMS.txt`；zip 的 SHA-256 `ca235f4922b7f5afee3534d71962971b05cd60bb68d1eab2b4cd1ae031730641` 用 `Get-FileHash` 与 `certutil` 独立复核一致 |
 
 ## 9. 已知限制与不适用场景
 
